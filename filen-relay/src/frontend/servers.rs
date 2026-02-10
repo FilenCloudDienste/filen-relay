@@ -7,7 +7,7 @@ use strum::IntoEnumIterator as _;
 
 use crate::{
     common::{LogLine, LogLineContent, ServerState, ServerStatus, ServerType},
-    frontend::Route,
+    frontend::{Route, AUTH},
 };
 
 #[component]
@@ -37,6 +37,8 @@ pub(crate) fn Servers() -> Element {
     });
     let servers = &*servers;
 
+    let is_admin = AUTH.read().as_ref().is_some_and(|auth| auth.is_admin);
+
     match servers() {
         Some(servers) if !servers.is_empty() => {
             rsx! {
@@ -49,6 +51,11 @@ pub(crate) fn Servers() -> Element {
                                 span { class: "font-mono", "#{server.spec.id.short()}" }
                             }
                             p { "Type: {server.spec.server_type}" }
+                            if is_admin {
+                                p {
+                                    span { class: "font-mono", "{server.spec.filen_email}" }
+                                }
+                            }
                             p { "Root: {server.spec.root}" }
                             if server.spec.read_only {
                                 p { "Mode: Read-Only" }
