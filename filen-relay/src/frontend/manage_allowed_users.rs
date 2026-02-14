@@ -68,12 +68,19 @@ pub(crate) fn ManageAllowedUsers() -> Element {
             if *loading.read() {
                 div { class: "text-gray-500", "Loading..." }
             } else {
-                match allowed_users() {
-                    Some(users) if !users.is_empty() => rsx! {
+                if let Some(allowed_users) = allowed_users.read().as_ref() {
+                    if !allowed_users.is_empty() {
                         div { class: "flex flex-col gap-2",
-                            for user in users.iter().cloned() {
+                            for user in allowed_users.iter().cloned() {
                                 div { class: "flex items-center gap-2 p-2 border rounded",
-                                    span { class: "flex-1", "{user}" }
+                                    span { class: "flex-1 font-mono",
+                                        "{user}"
+                                        if user == "*" {
+                                            span { class: "text-red-400 font-sans",
+                                                " (this is a wildcard that allows anyone to access the system)"
+                                            }
+                                        }
+                                    }
                                     button {
                                         class: "_button px-2 py-1 text-sm bg-red-500 hover:bg-red-600",
                                         onclick: move |_| {
@@ -94,31 +101,63 @@ pub(crate) fn ManageAllowedUsers() -> Element {
                                     }
                                 }
                             }
-                            button {
-                                class: "_button mt-2 bg-red-500 hover:bg-red-600",
-                                onclick: move |_| async move {
-                                    match crate::api::clear_allowed_users().await {
-                                        Ok(_) => {
-                                            tracing::info!("All users cleared successfully");
-                                            fetch_users();
+                        }
+                        p { class: "text-gray-500",
+                            "If you want to stop allowing other users to access the system, "
+                            a {
+                                class: "text-blue-400 cursor-pointer",
+                                onclick: move |_| {
+                                    spawn(async move {
+                                        match crate::api::clear_allowed_users().await {
+                                            Ok(_) => {
+                                                tracing::info!("Allowed users cleared successfully");
+                                                fetch_users();
+                                            }
+                                            Err(err) => {
+                                                tracing::error!("Failed to clear allowed users: {}", err);
+                                            }
                                         }
-                                        Err(err) => {
-                                            tracing::error!("Failed to clear users: {}", err);
-                                        }
-                                    }
+                                    });
                                 },
-                                "Clear All"
+                                "clear the allowed users list"
+                            }
+                            " and remove their servers as needed."
+                        }
+                    } else {
+                        div { class: "text-gray-500",
+                            p {
+                                "No allowed users configured. This means that only you are allowed to access the system and create servers."
+                            }
+                            p {
+                                "To allow other users to access the system, add their email addresses to the allowed users list."
                             }
                         }
-                    },
-                    Some(_) => rsx! {
-                        div { class: "text-red-500",
-                            "No allowed users configured. This means that anyone is allowed to access the system and create servers."
+                    }
+                    if !allowed_users.contains(&"*".to_string()) {
+                        p { class: "text-gray-500",
+                            "If you want to allow anyone to access the system, "
+                            a {
+                                class: "text-blue-400 cursor-pointer",
+                                onclick: move |_| {
+                                    spawn(async move {
+                                        match crate::api::add_allowed_user("*".to_string()).await {
+                                            Ok(_) => {
+                                                tracing::info!("Wildcard user added successfully");
+                                                fetch_users();
+                                            }
+                                            Err(err) => {
+                                                tracing::error!("Failed to add wildcard user: {}", err);
+                                            }
+                                        }
+                                    });
+                                },
+                                "add the wildcard (*) email"
+                            }
+                            " to the allowed users list."
                         }
-                    },
-                    None => rsx! {
-                        div { class: "text-gray-500", "Failed to load users." }
-                    },
+                    }
+                } else {
+                    div { class: "text-gray-500", "Failed to load users." }
                 }
             }
         }
