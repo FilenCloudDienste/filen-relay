@@ -129,19 +129,16 @@ pub(crate) async fn login_and_get_session_token(
             let allowed_users = DB
                 .get_allowed_users()
                 .map_err(|e| anyhow::anyhow!("Failed to get allowed users from database: {}", e))?;
-            let is_allowed = if allowed_users.is_empty() {
-                true
-            } else {
-                allowed_users.contains(&email) || (ADMIN_EMAIL.get() == Some(&email))
-            };
-            if is_allowed {
+            let is_admin = ADMIN_EMAIL.get() == Some(&email);
+            let is_wildcard = allowed_users.contains(&"*".to_string());
+            if is_admin || is_wildcard || allowed_users.contains(&email) {
                 let token = SessionToken(uuid::Uuid::new_v4().to_string());
                 SESSIONS.lock().unwrap().push(Session {
                     token: token.clone(),
                     filen_email: email.to_string(),
                     filen_password: password,
                     filen_2fa_code: two_factor_code,
-                    is_admin: Some(email.to_string()) == ADMIN_EMAIL.get().cloned(),
+                    is_admin,
                 });
                 Ok(token)
             } else {
