@@ -138,7 +138,8 @@ fn Login() -> Element {
                         let options = wasm_cookies::cookies::CookieOptions::default()
                             .with_path("/")
                             .secure()
-                            .with_same_site(wasm_cookies::cookies::SameSite::Strict);
+                            .with_same_site(wasm_cookies::cookies::SameSite::Strict)
+                            .expires_after(std::time::Duration::from_hours(24 * 30));
                         wasm_cookies::set("filen_email", &email(), &options);
                         wasm_cookies::set("filen_password", &password(), &options);
                         if let Some(code) = two_factor_code().as_deref() {
