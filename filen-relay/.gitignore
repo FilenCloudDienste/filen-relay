@@ -3,4 +3,5 @@
 
 # ignore application data
 *.db
+*.log
 rclone_configs

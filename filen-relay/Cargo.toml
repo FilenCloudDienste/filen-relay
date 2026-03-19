@@ -11,10 +11,10 @@ anyhow = "1.0.100"
 dioxus = { version = "0.7.1", features = ["router", "fullstack"] }
 rusqlite = { version = "0.38.0", features = ["bundled"], optional = true }
 serde = { version = "1.0.228", features = ["derive"] }
-filen-sdk-rs = { git = "https://github.com/FilenCloudDienste/filen-rs", rev = "da5612f70d77245f63c0c5be8a11b5fcc09e193c", optional = true }
-filen-rclone-wrapper = { git = "https://github.com/FilenCloudDienste/filen-rs", rev = "da5612f70d77245f63c0c5be8a11b5fcc09e193c", optional = true }
-filen-types = { git = "https://github.com/FilenCloudDienste/filen-rs", rev = "da5612f70d77245f63c0c5be8a11b5fcc09e193c", optional = true }
-filen-cli = { git = "https://github.com/FilenCloudDienste/filen-rs", rev = "da5612f70d77245f63c0c5be8a11b5fcc09e193c", optional = true }
+filen-sdk-rs = { git = "https://github.com/FilenCloudDienste/filen-rs", rev = "e328518b37ba6a364696f39b844c6f5ff27ffdbd", optional = true }
+filen-rclone-wrapper = { git = "https://github.com/FilenCloudDienste/filen-rs", rev = "e328518b37ba6a364696f39b844c6f5ff27ffdbd", optional = true }
+filen-types = { git = "https://github.com/FilenCloudDienste/filen-rs", rev = "e328518b37ba6a364696f39b844c6f5ff27ffdbd", optional = true }
+filen-cli = { git = "https://github.com/FilenCloudDienste/filen-rs", rev = "e328518b37ba6a364696f39b844c6f5ff27ffdbd", optional = true }
 uuid = { version = "1.20.0", features = ["v4", "js"] }
 strum = "0.27.2"
 strum_macros = "0.27.2"
@@ -26,6 +26,14 @@ axum-reverse-proxy = { version = "1.1.1", features = [
     "native-tls",
 ], optional = true }
 wasm-cookies = "=0.2.1"
+serde_json = { version = "1.0.149", optional = true }
+base64 = { version = "0.22.1", optional = true }
+http = { version = "1.4.0", optional = true }
+axum-core = { version = "0.5.6", optional = true }
+rand = { version = "0.10.0", optional = true }
+ftail = { version = "0.3.1", optional = true }
+log = { version = "0.4.29", optional = true }
+tempfile = { version = "3.27.0", optional = true }
 
 [features]
 default = ["web", "server"]
@@ -39,4 +47,12 @@ server = [
     "tokio",
     "axum-reverse-proxy",
     "filen-cli",
+    "rand",
+    "serde_json",
+    "base64",
+    "http",
+    "axum-core",
+    "ftail",
+    "log",
+    "tempfile",
 ]

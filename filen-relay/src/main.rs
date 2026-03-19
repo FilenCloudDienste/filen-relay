@@ -43,7 +43,26 @@ pub(crate) struct Args {
 
 #[cfg(feature = "server")]
 fn main() {
-    backend::serve(<Args as clap::Parser>::parse());
+    if std::env::args()
+        .any(|arg| arg.contains(backend::rclone_auth_proxy::ACT_AS_RCLONE_AUTH_PROXY_ARG))
+    {
+        // setup logging to file for easier debugging of rclone auth proxy process
+        ftail::Ftail::new()
+            .single_file(
+                std::path::Path::new("filen-relay-rclone_auth_proxy.log"),
+                true,
+                log::LevelFilter::Debug,
+            )
+            .max_file_size(100)
+            .init()
+            .unwrap();
+
+        if let Err(e) = backend::rclone_auth_proxy::rclone_auth_proxy_main() {
+            log::error!("{:?}", e);
+        }
+    } else {
+        backend::serve(<Args as clap::Parser>::parse());
+    }
 }
 
 #[cfg(not(feature = "server"))]

@@ -7,10 +7,7 @@ use dioxus::{
     prelude::*,
 };
 
-use crate::frontend::{
-    manage_allowed_users::ManageAllowedUsers,
-    servers::{CreateServerForm, Logs, Servers},
-};
+use crate::frontend::manage_allowed_users::ManageAllowedUsers;
 
 struct Authentication {
     pub email: String,
@@ -244,8 +241,6 @@ fn Home() -> Element {
     let auth = auth.as_ref().unwrap();
     rsx! {
         div { class: "flex flex-col gap-4",
-            Servers {}
-            CreateServerForm {}
             if auth.is_admin {
                 Link { to: Route::ManageAllowedUsersPage {}, class: "_button", "Manage Allowed Users" }
             }
@@ -255,9 +250,7 @@ fn Home() -> Element {
 
 #[component]
 fn LogsPage(logs_id: String) -> Element {
-    rsx! {
-        Logs { logs_id }
-    }
+    rsx! {}
 }
 
 #[component]
@@ -266,3 +259,5 @@ fn ManageAllowedUsersPage() -> Element {
         ManageAllowedUsers {}
     }
 }
+
+// todo: add in commented out uis again

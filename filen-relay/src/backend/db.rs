@@ -2,14 +2,13 @@ use std::sync::Mutex;
 
 use dioxus::prelude::*;
 use filen_sdk_rs::{
-    auth::Client,
-    fs::{file::enums::RemoteFileType, FSObject, HasUUID},
+    auth::{Client, http::ClientConfig, unauth::UnauthClient},
+    fs::categories::{DirType, NonRootFileType}, io::{RemoteDirectory, client_impl::IoSharedClientExt},
 };
-use filen_types::fs::UuidStr;
 use rusqlite::Connection;
 
 use crate::{
-    common::{ServerId, ServerSpec},
+    common::{ShareId, Share},
     util::UnwrapOnceLock,
 };
 
@@ -20,7 +19,7 @@ const DB_FILE_NAME: &str = "filen-relay.db";
 pub(crate) struct DbViaOfflineOrRemoteFile {
     conn: Mutex<rusqlite::Connection>,
     filen_client: Option<Client>,
-    remote_db_dir: Option<UuidStr>,
+    remote_db_dir: Option<RemoteDirectory>,
 }
 
 impl DbViaOfflineOrRemoteFile {
@@ -29,7 +28,7 @@ impl DbViaOfflineOrRemoteFile {
         filen_password: &str,
         filen_two_factor_code: Option<&str>,
     ) -> Result<Self> {
-        let client = filen_sdk_rs::auth::Client::login(
+        let client = UnauthClient::from_config(ClientConfig::default())?.login(
             filen_email,
             filen_password,
             filen_two_factor_code.unwrap_or("XXXXXX"),
@@ -76,24 +75,22 @@ impl DbViaOfflineOrRemoteFile {
                 id INTEGER PRIMARY KEY,
                 email TEXT NOT NULL UNIQUE
             );
-            CREATE TABLE IF NOT EXISTS servers (
+            CREATE TABLE IF NOT EXISTS shares (
                 id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                server_type TEXT NOT NULL,
                 root TEXT NOT NULL,
                 read_only BOOLEAN NOT NULL,
                 password TEXT,
                 filen_email TEXT NOT NULL,
-                filen_password TEXT NOT NULL,
-                filen_2fa_code TEXT
+                filen_stringified_client TEXT NOT NULL
             );
             ",
         )
         .unwrap();
+        // todo: verify schema when loading database?
     conn
     }
 
-    async fn initialize_from_filen(client: &Client) -> anyhow::Result<UuidStr> {
+    async fn initialize_from_filen(client: &Client) -> anyhow::Result<RemoteDirectory> {
         let local_db_file = std::env::current_dir()?.join(DB_FILE_NAME);
         if tokio::fs::try_exists(&local_db_file).await.context("Failed to check if local database file exists")? {
             tokio::fs::remove_file(&local_db_file).await.context("Failed to remove existing local database file")?;
@@ -102,11 +99,10 @@ impl DbViaOfflineOrRemoteFile {
             .find_item_at_path(&format!("/.filen-relay/{}", DB_FILE_NAME))
             .await?
         {
-            Some(FSObject::File(file)) => {
-                let db_file = RemoteFileType::File(file);
+            Some(NonRootFileType::File(db_file)) => {
                 client
                     .download_file_to_path(
-                        &db_file,
+                        db_file.as_ref(),
                         local_db_file,
                         None,
                     )
@@ -119,11 +115,15 @@ impl DbViaOfflineOrRemoteFile {
                 );
             }
         };
-        Ok(*client
+        if let DirType::Dir(remote_db_dir) = client
             .find_or_create_dir(".filen-relay")
             .await
             .context("Failed to create .filen-relay dir in admin Filen account")?
-            .uuid())
+        {
+            Ok(remote_db_dir.into_owned())
+        } else {
+            Err(anyhow::anyhow!("Failed to find or create .filen-relay dir in admin Filen account"))
+        }
     }
 
     // todo: make this more async so that other things can be resumed until the upload is done (can be done at call site probably)
@@ -133,7 +133,7 @@ impl DbViaOfflineOrRemoteFile {
         };
         client
             .upload_file_from_path(
-                self.remote_db_dir.as_ref().unwrap(),
+                &DirType::Dir(std::borrow::Cow::Borrowed(self.remote_db_dir.as_ref().unwrap())),
                 std::env::current_dir()?.join(DB_FILE_NAME),
                 None,
             )
@@ -180,21 +180,18 @@ impl DbViaOfflineOrRemoteFile {
         Ok(())
     }
 
-    pub(crate) fn get_servers(&self) -> Result<Vec<ServerSpec>> {
+    pub(crate) fn get_shares(&self) -> Result<Vec<Share>> {
         let db = self.conn.lock().unwrap();
         let mut stmt = 
-            db.prepare("SELECT id, name, server_type, root, read_only, password, filen_email, filen_password, filen_2fa_code FROM servers")?;
+            db.prepare("SELECT id, root, read_only, password, filen_email, filen_stringified_client FROM shares")?;
         let server_iter = stmt.query_map([], |row| {
-            Ok(ServerSpec {
+            Ok(Share {
                 id: row.get(0)?,
-                name: row.get(1)?,
-                server_type: row.get::<_, String>(2)?.as_str().into(),
-                root: row.get(3)?,
-                read_only: row.get(4)?,
-                password: row.get(5)?,
-                filen_email: row.get(6)?,
-                filen_password: row.get(7)?,
-                filen_2fa_code: row.get(8)?,
+                root: row.get(1)?,
+                read_only: row.get(2)?,
+                password: row.get(3)?,
+                filen_email: row.get(4)?,
+                filen_stringified_client: row.get(5)?,
             })
         })?;
         let mut servers = Vec::new();
@@ -204,20 +201,20 @@ impl DbViaOfflineOrRemoteFile {
         Ok(servers)
     }
 
-    pub(crate) async fn create_server(&self, spec: &ServerSpec) -> Result<()> {
+    pub(crate) async fn create_share(&self, share: &Share) -> Result<()> {
         self.conn.lock().unwrap().execute(
-            "INSERT INTO servers (id, name, server_type, root, read_only, password, filen_email, filen_password, filen_2fa_code) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            rusqlite::params![spec.id, spec.name, spec.server_type.to_string(), spec.root, spec.read_only, spec.password, spec.filen_email, spec.filen_password, spec.filen_2fa_code],
+            "INSERT INTO shares (id, root, read_only, password, filen_email, filen_stringified_client) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![share.id, share.root, share.read_only, share.password, share.filen_email, share.filen_stringified_client],
         )?;
         self.write_to_filen().await?;
         Ok(())
     }
 
-    pub(crate) async fn delete_server(&self, id: &ServerId) -> Result<()> {
+    pub(crate) async fn delete_share(&self, id: &ShareId) -> Result<()> {
         self.conn
             .lock()
             .unwrap()
-            .execute("DELETE FROM servers WHERE id = ?1", rusqlite::params![id])?;
+            .execute("DELETE FROM shares WHERE id = ?1", rusqlite::params![id])?;
         self.write_to_filen().await?;
         Ok(())
     }

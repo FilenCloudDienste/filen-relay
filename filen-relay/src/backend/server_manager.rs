@@ -1,372 +1,114 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::Mutex;
+use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 
 use anyhow::{Context, Result};
 use dioxus::logger::tracing;
+use filen_rclone_wrapper::rclone_installation::RcloneInstallation;
 use filen_rclone_wrapper::rclone_installation::RcloneInstallationConfig;
-use filen_rclone_wrapper::serve::BasicServerOptions;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
-use tokio::select;
-use tokio::sync::oneshot;
 
-use crate::backend::auth;
-use crate::backend::db::DB;
-use crate::backend::READY_ALL_SERVERS;
-use crate::common::LogLine;
-use crate::common::LogLineContent;
-use crate::common::ServerId;
-use crate::common::ServerSpec;
-use crate::common::ServerState;
-use crate::common::ServerStatus;
-use crate::common::ServerType;
-use crate::util::IncrementalVec;
-use crate::util::UnwrapOnceLock;
-
-pub(crate) static SERVER_MANAGER: UnwrapOnceLock<ServerManagerApi> =
-    UnwrapOnceLock::<ServerManagerApi>::new();
-
-#[derive(Clone)]
-pub(crate) struct Logger {
-    pub server_spec: ServerSpec,
-    pub logs: Arc<Mutex<IncrementalVec<LogLine>>>,
-}
-
-pub(crate) struct ServerManagerApi {
-    server_states_rx: tokio::sync::watch::Receiver<Vec<ServerState>>,
-    logs: Arc<Mutex<HashMap<String, Logger>>>,
-    updates_tx: tokio::sync::mpsc::Sender<ServerSpecUpdate>,
-}
-
-pub(crate) enum ServerSpecUpdate {
-    Add(ServerSpec),
-    Remove(ServerId),
-}
-
-type StopServerHandle = oneshot::Sender<()>;
+use crate::backend::rclone_auth_proxy::generate_rclone_auth_proxy_args;
 
 pub(crate) struct ServerManager {
-    server_states_tx: tokio::sync::watch::Sender<Vec<ServerState>>,
-    logs: Arc<Mutex<HashMap<String, Logger>>>,
-    stop_handles: HashMap<ServerId, StopServerHandle>,
+    processes: Vec<RcloneServerProcess>,
+}
+
+struct RcloneServerProcess {
+    pub server_type: String,
+    pub _process: tokio::process::Child,
+    pub port: u16,
 }
 
 impl ServerManager {
-    pub(crate) fn new_api() -> ServerManagerApi {
-        let (server_states_tx, server_states_rx) =
-            tokio::sync::watch::channel(Vec::<ServerState>::new());
-        let (updates_tx, mut updates_rx) = tokio::sync::mpsc::channel::<ServerSpecUpdate>(100);
-
-        let logs = Arc::new(Mutex::new(HashMap::new()));
-        let api = ServerManagerApi {
-            updates_tx,
-            logs: logs.clone(),
-            server_states_rx,
-        };
-        tokio::spawn(async move {
-            Self {
-                server_states_tx,
-                logs: logs.clone(),
-                stop_handles: HashMap::new(),
-            }
-            .run(&mut updates_rx)
-            .await;
-        });
-        api
-    }
-
-    async fn run(mut self, updates_rx: &mut tokio::sync::mpsc::Receiver<ServerSpecUpdate>) {
-        // load existing servers from the database and create them
-        let servers = match DB.get_servers() {
-            Ok(servers) => servers,
-            Err(e) => {
-                tracing::error!("Failed to load server specs from database: {}", e);
-                return;
-            }
-        };
-        for server in servers {
-            if let Err(e) = self.start_server(&server).await {
-                tracing::error!("Failed to start server {}: {}", server.name, e);
-            }
-        }
-        *READY_ALL_SERVERS.lock().unwrap() = true;
-
-        loop {
-            // listen for updates
-            // on update, persist changes to the database and start/stop servers accordingly
-            if let Some(update) = updates_rx.recv().await {
-                match update {
-                    ServerSpecUpdate::Add(spec) => {
-                        tracing::info!("Adding server spec: {}", spec.name);
-                        if let Err(e) = DB.create_server(&spec).await {
-                            tracing::error!("Failed to create server spec in database: {}", e);
-                            continue;
-                        };
-                        if let Err(e) = self.start_server(&spec).await {
-                            tracing::error!("Failed to start server: {}", e);
-                        };
-                    }
-                    ServerSpecUpdate::Remove(id) => {
-                        let spec = {
-                            let states = self.server_states_tx.borrow();
-                            match states.iter().find(|s| s.spec.id == id) {
-                                Some(s) => s.spec.clone(),
-                                None => {
-                                    tracing::error!("Server spec with id {} not found", id);
-                                    continue;
-                                }
-                            }
-                        };
-                        match DB.delete_server(&id).await {
-                            Ok(_) => (),
-                            Err(e) => {
-                                tracing::error!(
-                                    "Failed to delete server spec from database: {}",
-                                    e
-                                );
-                                continue;
-                            }
-                        };
-                        tracing::info!("Removing server spec with id: {}", id);
-                        if let Err(e) = self.stop_server(&spec).await {
-                            tracing::error!("Failed to stop server: {}", e);
-                        }
-                    }
-                }
-            } else {
-                tracing::error!("Server spec updates channel closed");
-                break;
-            }
-        }
-    }
-
-    async fn start_server(&mut self, spec: &ServerSpec) -> Result<()> {
-        // create logger
-        let (logs_id, logger) = Logger::new(spec);
-        self.logs
-            .lock()
-            .unwrap()
-            .insert(logs_id.clone(), logger.clone());
-
-        // set "pending" state
-        logger.info("Starting server...");
-        self.server_states_tx.send_modify(|server_states| {
-            server_states.push(ServerState {
-                spec: spec.clone(),
-                status: ServerStatus::Starting,
-                logs_id,
-            });
-        });
-
-        // start server process
-        let client = auth::authenticate_filen_client(
-            spec.filen_email.clone(),
-            &spec.filen_password,
-            spec.filen_2fa_code.clone(),
-        )
-        .await
-        .context("Failed to authenticate Filen client using previously entered credentials")?;
+    pub(crate) async fn start_servers(self_port: u16) -> Result<ServerManager> {
         let config_dir = std::env::current_dir()
             .context("Failed to get current directory")?
             .join("rclone_configs");
-        let port = port_check::free_local_ipv4_port().context("Failed to find free local port")?;
-        let mut server = filen_rclone_wrapper::serve::start_basic_server(
-            &client,
-            &RcloneInstallationConfig {
-                rclone_binary_dir: config_dir.clone(),
-                config_dir: config_dir.join(format!("server_{}", spec.id)),
-            },
-            match spec.server_type {
-                ServerType::Http => "http",
-                ServerType::Webdav => "webdav",
-                ServerType::S3 => "s3",
-                ServerType::Ftp => "ftp",
-                ServerType::Sftp => "sftp",
-            },
-            BasicServerOptions {
-                address: format!(":{}", port),
-                root: Some(spec.root.clone()),
-                user: None,
-                password: spec.password.clone(),
-                read_only: spec.read_only,
-                cache_size: None,
-                transfers: None,
-            },
-            vec![],
-        )
-        .await
-        .context("Failed to start rclone server")?;
+        let mut servers = vec![];
+        for server_type in ["http", "webdav"] {
+            // start server process
+            let port =
+                port_check::free_local_ipv4_port().context("Failed to find free local port")?;
 
-        // set "running" state
-        logger.info("Server started successfully.");
-        self.server_states_tx.send_modify(|server_states| {
-            if let Some(s) = server_states.iter_mut().find(|s| s.spec.id == spec.id) {
-                s.status = ServerStatus::Running { port };
+            // create temporary shell script to start the executable with the right args
+            if cfg!(not(unix)) {
+                panic!("Rclone auth proxy is currently only supported on Unix systems because it relies on shell scripts to start the executable with the right arguments. Contributions to make it work on Windows are welcome!");
             }
-        });
+            let script = &format!(
+                "#!/bin/sh\n{} {}\n",
+                std::env::current_exe()
+                    .context("Failed to get current executable path")?
+                    .display(),
+                generate_rclone_auth_proxy_args(self_port)
+            );
+            let mut script_file = tempfile::NamedTempFile::new()?;
+            script_file.disable_cleanup(true); // todo
+            script_file.as_file().write_all(script.as_bytes())?;
+            let mut perms = script_file.as_file().metadata()?.permissions();
+            perms.set_mode(0o755);
+            script_file.as_file().set_permissions(perms)?;
+            dbg!(script_file.path());
+            // todo: can we avoid creating a platform-dependent shell script?
 
-        let spec = spec.clone();
+            // spawn rclone process
+            let (mut process, _) =
+                RcloneInstallation::initialize_unauthenticated(&RcloneInstallationConfig {
+                    rclone_binary_dir: config_dir.clone(),
+                    config_dir: config_dir.join(format!("server_{}", server_type)),
+                })
+                .await
+                .context("Failed to initialize Rclone installation")?
+                .execute_in_background(&[
+                    "serve",
+                    server_type,
+                    "--addr",
+                    &format!(":{}", port),
+                    "--auth-proxy",
+                    script_file.path().to_str().unwrap(),
+                    "--verbose",
+                ])
+                .await
+                .context("Failed to start Rclone server")?;
 
-        // handle logs
-        {
-            let logger = logger.clone();
-            let process_stdout = server.process.stdout.take().unwrap();
-            tokio::spawn(async move {
-                let mut reader = BufReader::new(process_stdout).lines();
-                while let Ok(Some(line)) = reader.next_line().await {
-                    logger.process_output(&line);
-                }
-            });
-        }
-        {
-            let logger = logger.clone();
-            let process_stderr = server.process.stderr.take().unwrap();
-            tokio::spawn(async move {
-                let mut reader = BufReader::new(process_stderr).lines();
-                while let Ok(Some(line)) = reader.next_line().await {
-                    logger.process_output(&line);
-                }
-            });
-        }
+            // todo: handle process termination (health checks?) and restarts
 
-        let (stop_server_tx, stop_server_rx) = oneshot::channel::<()>();
-        self.stop_handles.insert(spec.id.clone(), stop_server_tx);
-        let server_states_tx = self.server_states_tx.clone();
-        tokio::spawn(async move {
-            select! {
-                _ = stop_server_rx => {
-                    // handle stopping the server
-                    if let Err(e) = server.process.kill().await {
-                        logger.error(&format!("Failed to stop server: {}", e));
-                    } else {
-                        logger.info("Server stopped.");
+            // handle logs
+            {
+                let process_stdout = process.stdout.take().unwrap();
+                tokio::spawn(async move {
+                    let mut reader = BufReader::new(process_stdout).lines();
+                    while let Ok(Some(line)) = reader.next_line().await {
+                        tracing::debug!("Rclone server {} stdout: {}", server_type, line);
                     }
-                    server_states_tx.send_modify(|server_states| {
-                        server_states.retain(|s| s.spec.id != spec.id);
-                    });
-                }
-                status = server.process.wait() => {
-                    // handle process exit
-                    match status {
-                        Ok(status) => {
-                            logger.error(&format!("Server process exited with status: {}", status));
-                            if status.success() {
-                                server_states_tx.send_modify(|server_states| {
-                                    server_states.retain(|s| s.spec.id != spec.id);
-                                });
-                            } else {
-                                server_states_tx.send_modify(|server_states| {
-                                    if let Some(s) = server_states.iter_mut().find(|s| s.spec.id == spec.id)
-                                    {
-                                        s.status = ServerStatus::Error;
-                                    }
-                                });
-                            }
-                        }
-                        Err(e) => {
-                            logger.error(&format!("Server process wait failed: {}", e));
-                            server_states_tx.send_modify(|server_states| {
-                                if let Some(s) = server_states.iter_mut().find(|s| s.spec.id == spec.id) {
-                                    s.status = ServerStatus::Error;
-                                }
-                            });
-                        }
-                    };
-                }
+                });
             }
-        });
+            {
+                let process_stderr = process.stderr.take().unwrap();
+                tokio::spawn(async move {
+                    let mut reader = BufReader::new(process_stderr).lines();
+                    while let Ok(Some(line)) = reader.next_line().await {
+                        tracing::debug!("Rclone server {} stderr: {}", server_type, line);
+                    }
+                });
+            }
 
-        Ok(())
+            servers.push(RcloneServerProcess {
+                server_type: server_type.to_string(),
+                _process: process,
+                port,
+            });
+        }
+
+        Ok(ServerManager { processes: servers })
     }
 
-    async fn stop_server(&mut self, spec: &ServerSpec) -> Result<()> {
-        // send stop process
-        let _ = self
-            .stop_handles
-            .remove(&spec.id)
-            .ok_or_else(|| anyhow::anyhow!("No running server found with id: {} to stop", spec.id))?
-            .send(()); // ignore failure, means the server is already stopped
-        Ok(())
-    }
-    // todo: at some point also delete the directory?
-}
-
-impl ServerManagerApi {
-    /// Returns a receiver to listen for server state updates.
-    pub(crate) fn get_server_states(&self) -> tokio::sync::watch::Receiver<Vec<ServerState>> {
-        self.server_states_rx.clone()
-    }
-
-    /// Returns a receiver to listen for logs.
-    pub(crate) fn get_logs(&self, logs_id: &str) -> Option<Logger> {
-        // todo: handle errors safely?
-        let logs = self.logs.lock().unwrap();
-        logs.get(logs_id).cloned()
-    }
-
-    /// Add/remove the server spec via the manager (will start/stop it) and persist it to the database.
-    pub(crate) async fn update_server_spec(&self, update: ServerSpecUpdate) -> Result<()> {
-        self.updates_tx
-            .send(update)
-            .await
-            .context("Failed to send server spec update")
-    }
-}
-
-impl Logger {
-    fn new(spec: &ServerSpec) -> (String, Self) {
-        let logs_id = format!("logs_{}_{}", spec.id.short(), uuid::Uuid::new_v4());
-        let logs = Logger {
-            server_spec: spec.clone(),
-            logs: Arc::new(Mutex::new(IncrementalVec::<LogLine>::new(100))),
-        };
-        let logs_ = logs.logs.clone();
-        (
-            logs_id,
-            Self {
-                server_spec: spec.clone(),
-                logs: logs_,
-            },
-        )
-    }
-
-    fn info(&self, msg: &str) {
-        self.logs.lock().unwrap().push(LogLine {
-            timestamp: chrono::Utc::now(),
-            content: LogLineContent::Event(msg.to_string()),
-        });
-        tracing::info!(
-            "Server {} ({}): {}",
-            self.server_spec.name,
-            self.server_spec.id,
-            msg
-        );
-    }
-
-    fn error(&self, msg: &str) {
-        self.logs.lock().unwrap().push(LogLine {
-            timestamp: chrono::Utc::now(),
-            content: LogLineContent::Event(msg.to_string()),
-        });
-        tracing::info!(
-            "Server {} ({}) ERR: {}",
-            self.server_spec.name,
-            self.server_spec.id,
-            msg
-        );
-    }
-
-    fn process_output(&self, msg: &str) {
-        self.logs.lock().unwrap().push(LogLine {
-            timestamp: chrono::Utc::now(),
-            content: LogLineContent::ServerProcess(msg.to_string()),
-        });
-        tracing::info!(
-            "Server {} ({}): {}",
-            self.server_spec.name,
-            self.server_spec.id,
-            msg
-        );
+    pub(crate) async fn get_port_for_forwarded_request(&self, server_type: &str) -> Result<u16> {
+        let server = self
+            .processes
+            .iter()
+            .find(|s| s.server_type == server_type)
+            .context("No server found for the given type")?;
+        Ok(server.port)
     }
 }

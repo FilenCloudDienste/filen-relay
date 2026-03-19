@@ -1,9 +1,9 @@
-# https://github.com/FilenCloudDienste/filen-rs/blob/c38cb6a22e37ce5f2cfd44e1aa687c7a7e7e7e3c/rust-toolchain.toml
+# https://github.com/FilenCloudDienste/filen-rs/blob/d727995d21b6c59e15d503c390c83b9ea2c5de90/rust-toolchain.toml
 
 [toolchain]
 # we use nightly because of the `higher-ranked-assumptions` feature (https://github.com/rust-lang/rust/pull/143545)
 #
 # At time of writing this was causing issues with "implementation of `std::marker::Send` is not general enough"
 # errors with the reworked `filen_sdk_rs::api::handle_request` function.
-channel = "nightly-2025-08-14"
+channel = "nightly-2026-02-20"
 components = ["rust-src"]

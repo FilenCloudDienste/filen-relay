@@ -5,12 +5,9 @@ use dioxus::{
 };
 use strum::IntoEnumIterator as _;
 
-use crate::{
-    common::{LogLine, LogLineContent, ServerState, ServerStatus, ServerType},
-    frontend::{Route, AUTH},
-};
+use crate::frontend::{Route, AUTH};
 
-#[component]
+/* #[component]
 pub(crate) fn Servers() -> Element {
     let mut servers = use_signal(|| None::<Vec<ServerState>>);
     use_future(move || async move {
@@ -333,3 +330,4 @@ pub(crate) fn Logs(logs_id: String) -> Element {
         }
     }
 }
+ */

@@ -1,4 +1,7 @@
-use std::{fmt::Display, sync::OnceLock};
+use std::{
+    fmt::Display,
+    sync::{Arc, OnceLock},
+};
 
 pub(crate) static ADMIN_EMAIL: OnceLock<String> = OnceLock::new();
 
@@ -10,7 +13,7 @@ use dioxus::{
         http::request::Parts,
     },
 };
-use filen_sdk_rs::auth::Client;
+use filen_sdk_rs::auth::{http::ClientConfig, unauth::UnauthClient, Client};
 use std::sync::{LazyLock, Mutex};
 
 use crate::backend::db::DB;
@@ -30,8 +33,7 @@ impl Display for SessionToken {
 pub(crate) struct Session {
     pub token: SessionToken,
     pub filen_email: String,
-    pub filen_password: String,
-    pub filen_2fa_code: Option<String>,
+    pub filen_client: Arc<Client>,
     pub is_admin: bool,
 }
 
@@ -91,12 +93,13 @@ pub(crate) async fn authenticate_filen_client(
 ) -> Result<Client, anyhow::Error> {
     use filen_sdk_rs::ErrorKind;
     use filen_types::error::ResponseError;
-    match Client::login(
-        email.clone(),
-        password,
-        two_factor_code.as_deref().unwrap_or("XXXXXX"),
-    )
-    .await
+    match UnauthClient::from_config(ClientConfig::default())?
+        .login(
+            email.clone(),
+            password,
+            two_factor_code.as_deref().unwrap_or("XXXXXX"),
+        )
+        .await
     {
         Err(e) if e.kind() == ErrorKind::Server => match e.downcast::<ResponseError>() {
             Ok(ResponseError::ApiError { code, .. }) => {
@@ -125,7 +128,7 @@ pub(crate) async fn login_and_get_session_token(
 ) -> anyhow::Result<SessionToken> {
     match authenticate_filen_client(email.clone(), &password, two_factor_code.clone()).await {
         Err(e) => Err(e.context("Failed to log in")),
-        Ok(_client) => {
+        Ok(client) => {
             let allowed_users = DB
                 .get_allowed_users()
                 .map_err(|e| anyhow::anyhow!("Failed to get allowed users from database: {}", e))?;
@@ -135,9 +138,8 @@ pub(crate) async fn login_and_get_session_token(
                 let token = SessionToken(uuid::Uuid::new_v4().to_string());
                 SESSIONS.lock().unwrap().push(Session {
                     token: token.clone(),
-                    filen_email: email.to_string(),
-                    filen_password: password,
-                    filen_2fa_code: two_factor_code,
+                    filen_email: email,
+                    filen_client: Arc::new(client),
                     is_admin,
                 });
                 Ok(token)
