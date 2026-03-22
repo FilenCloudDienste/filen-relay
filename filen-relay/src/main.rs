@@ -2,6 +2,7 @@ mod api;
 #[cfg(feature = "server")]
 mod backend;
 mod common;
+mod components;
 mod frontend;
 mod util;
 
