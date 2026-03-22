@@ -6,7 +6,7 @@ use base64::Engine;
 use dioxus::prelude::*;
 use dioxus::server::axum;
 use dioxus::server::axum::{
-    extract::{Extension, Path, Request},
+    extract::{Path, Request},
     response::Response,
 };
 use http::Uri;
@@ -75,11 +75,9 @@ pub(crate) fn serve(args: Args) {
                 server_manager.clone(),
                 server_manager.clone(),
             );
-            Ok(dioxus::server::router(crate::frontend::App)
-                .layer(axum::middleware::from_fn(
-                    auth::middleware_extract_session_token,
-                ))
-                .layer(Extension(server_manager))
+            let router = dioxus::server::router(crate::frontend::App);
+            let router = auth::initialize_session_manager(router);
+            Ok(router
                 .route(
                     "/s/{id}",
                     axum::routing::any(|Path(id): Path<String>, req: Request| async move {
@@ -152,8 +150,8 @@ async fn handle_rclone_request(
                         .parse()
                         .unwrap(),
                 );
-                *req.uri_mut() =
-                    Uri::from_str(&req.uri().to_string().replace(base_path, "")).unwrap();
+                *req.uri_mut() = Uri::from_str(&req.uri().to_string().replace(base_path, ""))
+                    .unwrap_or(Uri::default());
                 proxy.proxy_request(req).await.unwrap_or_else(|e| {
                     Response::builder()
                         .status(axum::http::StatusCode::BAD_GATEWAY)

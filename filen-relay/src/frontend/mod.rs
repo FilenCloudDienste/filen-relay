@@ -127,8 +127,9 @@ fn Login() -> Element {
     let login = move || async move {
         loading.set(true);
         match crate::api::login(email.cloned(), password.cloned(), two_factor_code.cloned()).await {
-            Ok(_response) => {
-                tracing::info!("Logged in successfully");
+            Ok(login_status) => match login_status {
+                LoginStatus::LoggedIn => {
+                    tracing::info!("Login successful");
                 #[cfg(target_arch = "wasm32")]
                 {
                     if *save_credentials.read() {
@@ -151,6 +152,14 @@ fn Login() -> Element {
                 password.set("".to_string());
                 two_factor_code.set(None);
             }
+                LoginStatus::TwoFactorRequired => {
+                    tracing::info!("Two-factor authentication required");
+                }
+                LoginStatus::InvalidCredentials => {
+                    tracing::info!("Invalid email or password");
+                    // todo: better user feedback
+                }
+            },
             Err(err) => {
                 tracing::error!("Login failed: {}", err);
             }

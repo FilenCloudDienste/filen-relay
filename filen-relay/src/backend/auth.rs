@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fmt::Display,
     sync::{Arc, OnceLock},
 };
@@ -14,14 +15,51 @@ use dioxus::{
     },
 };
 use filen_sdk_rs::auth::{http::ClientConfig, unauth::UnauthClient, Client};
+use serde::{Deserialize, Serialize};
 use std::sync::{LazyLock, Mutex};
+use tower_sessions::Session;
 
-use crate::backend::db::DB;
+use crate::{api::LoginStatus, backend::db::DB};
 
-static SESSIONS: LazyLock<Mutex<Vec<Session>>> = LazyLock::new(|| Mutex::new(Vec::new()));
+// todo: improve this whole module?
 
-#[derive(Clone, PartialEq)]
+static SESSION_TOKEN_KEY: &str = "session_token";
+
+pub(crate) fn initialize_session_manager(router: axum::Router) -> axum::Router {
+    router
+        .layer(axum::middleware::from_fn(
+            move |session: Session, mut req: Request, next: Next| async move {
+                let session_token = match session.get(SESSION_TOKEN_KEY).await.unwrap_or_default() {
+                    Some(token) => token,
+                    None => {
+                        let token = SessionToken::new();
+                        session
+                            .insert(SESSION_TOKEN_KEY, token.clone())
+                            .await
+                            .unwrap();
+                        token
+                    }
+                };
+                req.extensions_mut().insert(session_token);
+                next.run(req).await
+            },
+        ))
+        .layer(tower_sessions::SessionManagerLayer::new(
+            tower_sessions::MemoryStore::default(),
+        ))
+}
+
+static SESSIONS: LazyLock<Mutex<HashMap<SessionToken, AuthSession>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub(crate) struct SessionToken(String);
+
+impl SessionToken {
+    fn new() -> Self {
+        Self(uuid::Uuid::new_v4().to_string())
+    }
+}
 
 impl Display for SessionToken {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -30,39 +68,13 @@ impl Display for SessionToken {
 }
 
 #[derive(Clone)]
-pub(crate) struct Session {
-    pub token: SessionToken,
+pub(crate) struct AuthSession {
     pub filen_email: String,
     pub filen_client: Arc<Client>,
     pub is_admin: bool,
 }
 
-/// Axum middleware to extract session token from cookies
-pub(crate) async fn middleware_extract_session_token(
-    mut request: Request,
-    next: Next,
-) -> axum::http::Response<axum::body::Body> {
-    if let Some(cookies) = request.headers().get("Cookie") {
-        let token = cookies
-            .to_str()
-            .unwrap_or("")
-            .split(';')
-            .find_map(|cookie| {
-                let (name, value) = cookie.trim().split_once('=')?;
-                if name == "Session" {
-                    Some(value.to_string())
-                } else {
-                    None
-                }
-            });
-        if let Some(token) = token {
-            request.extensions_mut().insert(SessionToken(token));
-        }
-    }
-    next.run(request).await
-}
-
-impl<S> FromRequestParts<S> for Session
+impl<S> FromRequestParts<S> for AuthSession
 where
     S: Send + Sync,
 {
@@ -73,11 +85,11 @@ where
             .extensions
             .get::<SessionToken>()
             .and_then(|token| {
+                dioxus::logger::tracing::info!("Extracted session token: {}", token);
                 SESSIONS
                     .lock()
                     .unwrap()
-                    .iter()
-                    .find(|s| s.token == *token)
+                    .get(token)
                     .cloned()
                     .ok_or_else(|| anyhow::anyhow!("Invalid session token"))
                     .ok()
@@ -86,17 +98,18 @@ where
     }
 }
 
-pub(crate) async fn authenticate_filen_client(
+pub(crate) async fn login_and_get_session_token(
+    session: Session,
     email: String,
-    password: &str,
+    password: String,
     two_factor_code: Option<String>,
-) -> Result<Client, anyhow::Error> {
+) -> anyhow::Result<LoginStatus> {
     use filen_sdk_rs::ErrorKind;
     use filen_types::error::ResponseError;
     match UnauthClient::from_config(ClientConfig::default())?
         .login(
             email.clone(),
-            password,
+            &password,
             two_factor_code.as_deref().unwrap_or("XXXXXX"),
         )
         .await
@@ -104,9 +117,9 @@ pub(crate) async fn authenticate_filen_client(
         Err(e) if e.kind() == ErrorKind::Server => match e.downcast::<ResponseError>() {
             Ok(ResponseError::ApiError { code, .. }) => {
                 if code.as_deref() == Some("enter_2fa") {
-                    Err(anyhow::anyhow!("2FA required"))
+                    Ok(LoginStatus::TwoFactorRequired)
                 } else if code.as_deref() == Some("email_or_password_wrong") {
-                    Err(anyhow::anyhow!("Email or password wrong"))
+                    Ok(LoginStatus::InvalidCredentials)
                 } else {
                     Err(anyhow::anyhow!(
                         "Failed to log in (code {})",
@@ -117,17 +130,6 @@ pub(crate) async fn authenticate_filen_client(
             _ => Err(anyhow::anyhow!("Failed to log in")),
         },
         Err(e) => Err(anyhow::anyhow!("Failed to log in: {}", e)),
-        Ok(client) => Ok(client),
-    }
-}
-
-pub(crate) async fn login_and_get_session_token(
-    email: String,
-    password: String,
-    two_factor_code: Option<String>,
-) -> anyhow::Result<SessionToken> {
-    match authenticate_filen_client(email.clone(), &password, two_factor_code.clone()).await {
-        Err(e) => Err(e.context("Failed to log in")),
         Ok(client) => {
             let allowed_users = DB
                 .get_allowed_users()
@@ -135,14 +137,19 @@ pub(crate) async fn login_and_get_session_token(
             let is_admin = ADMIN_EMAIL.get() == Some(&email);
             let is_wildcard = allowed_users.contains(&"*".to_string());
             if is_admin || is_wildcard || allowed_users.contains(&email) {
-                let token = SessionToken(uuid::Uuid::new_v4().to_string());
-                SESSIONS.lock().unwrap().push(Session {
-                    token: token.clone(),
-                    filen_email: email,
-                    filen_client: Arc::new(client),
-                    is_admin,
-                });
-                Ok(token)
+                let session_token = session
+                    .get(SESSION_TOKEN_KEY)
+                    .await?
+                    .ok_or(anyhow::anyhow!("Session token not found"))?;
+                SESSIONS.lock().unwrap().insert(
+                    session_token,
+                    AuthSession {
+                        filen_email: email,
+                        filen_client: Arc::new(client),
+                        is_admin,
+                    },
+                );
+                Ok(LoginStatus::LoggedIn)
             } else {
                 Err(anyhow::anyhow!("User is not allowed"))
             }
