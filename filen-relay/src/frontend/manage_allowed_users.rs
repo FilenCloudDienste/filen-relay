@@ -4,6 +4,9 @@ use dioxus::{
     prelude::*,
 };
 
+use crate::components::button::{Button, ButtonVariant};
+use crate::components::input::Input;
+
 #[component]
 pub(crate) fn ManageAllowedUsers() -> Element {
     let mut allowed_users = use_signal(|| None::<Vec<String>>);
@@ -29,8 +32,8 @@ pub(crate) fn ManageAllowedUsers() -> Element {
     });
 
     rsx! {
-        div { class: "flex flex-col gap-4 border p-4 rounded-lg",
-            h2 { class: "font-bold text-lg", "Manage Allowed Users" }
+        div { class: "flex flex-col gap-4",
+            h2 { "Manage Allowed Users" }
             form {
                 class: "flex gap-2 items-center",
                 onsubmit: move |e| async move {
@@ -51,15 +54,14 @@ pub(crate) fn ManageAllowedUsers() -> Element {
                         }
                     }
                 },
-                input {
-                    class: "_input flex-1",
+                Input {
                     r#type: "email",
                     placeholder: "user@example.com",
                     value: "{new_user_email}",
-                    oninput: move |e| new_user_email.set(e.value().clone()),
+                    oninput: move |e: Event<FormData>| new_user_email.set(e.value().clone()),
                 }
-                button {
-                    class: "_button",
+                Button {
+                    variant: ButtonVariant::Primary,
                     r#type: "submit",
                     disabled: new_user_email.read().is_empty(),
                     "Add User"
@@ -72,7 +74,7 @@ pub(crate) fn ManageAllowedUsers() -> Element {
                     if !allowed_users.is_empty() {
                         div { class: "flex flex-col gap-2",
                             for user in allowed_users.iter().cloned() {
-                                div { class: "flex items-center gap-2 p-2 border rounded",
+                                div { class: "flex items-center flex-row! card p-2! pl-4!",
                                     span { class: "flex-1 font-mono",
                                         "{user}"
                                         if user == "*" {
@@ -81,8 +83,8 @@ pub(crate) fn ManageAllowedUsers() -> Element {
                                             }
                                         }
                                     }
-                                    button {
-                                        class: "_button px-2 py-1 text-sm bg-red-500 hover:bg-red-600",
+                                    Button {
+                                        variant: ButtonVariant::Destructive,
                                         onclick: move |_| {
                                             let user = user.clone();
                                             async move {
@@ -97,15 +99,15 @@ pub(crate) fn ManageAllowedUsers() -> Element {
                                                 }
                                             }
                                         },
-                                        "✕"
+                                        "Remove"
                                     }
                                 }
                             }
                         }
-                        p { class: "text-gray-500",
-                            "If you want to stop allowing other users to access the system, "
-                            a {
-                                class: "text-blue-400 cursor-pointer",
+                        p { class: "text-gray-500 flex flex-col gap-2 items-start",
+                            "If you want to stop allowing other users to access the system, clear the allowed users list."
+                            Button {
+                                variant: ButtonVariant::Secondary,
                                 onclick: move |_| {
                                     spawn(async move {
                                         match crate::api::clear_allowed_users().await {
@@ -119,9 +121,8 @@ pub(crate) fn ManageAllowedUsers() -> Element {
                                         }
                                     });
                                 },
-                                "clear the allowed users list"
+                                "Clear allowed users"
                             }
-                            " and remove their servers as needed."
                         }
                     } else {
                         div { class: "text-gray-500",
@@ -134,10 +135,10 @@ pub(crate) fn ManageAllowedUsers() -> Element {
                         }
                     }
                     if !allowed_users.contains(&"*".to_string()) {
-                        p { class: "text-gray-500",
-                            "If you want to allow anyone to access the system, "
-                            a {
-                                class: "text-blue-400 cursor-pointer",
+                        p { class: "text-gray-500 flex flex-col gap-2 items-start",
+                            "If you want to allow anyone to access the system, add the wildcard (*) email to the allowed users list."
+                            Button {
+                                variant: ButtonVariant::Secondary,
                                 onclick: move |_| {
                                     spawn(async move {
                                         match crate::api::add_allowed_user("*".to_string()).await {
@@ -151,9 +152,8 @@ pub(crate) fn ManageAllowedUsers() -> Element {
                                         }
                                     });
                                 },
-                                "add the wildcard (*) email"
+                                "Allow anyone"
                             }
-                            " to the allowed users list."
                         }
                     }
                 } else {

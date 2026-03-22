@@ -5,9 +5,18 @@
 }
 
 body {
-    @apply bg-[#050505] text-gray-300 font-sans;
+    @apply text-gray-300 font-sans;
+    background-color: var(--light, var(--primary-color-1)) var(--dark, var(--primary-color-2));
 }
 
 h2 {
     @apply text-xl font-semibold mb-2 mt-2;
+}
+
+#navbar {
+    background-color: var(--light, var(--primary-color-2)) var(--dark, var(--primary-color-3));
+}
+
+.text-normal {
+    color: var(--secondary-color-4);
 }

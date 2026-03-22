@@ -61,7 +61,7 @@ pub(crate) fn ShareCard(share: Share, on_remove: EventHandler<()>) -> Element {
                 }
                 div { class: "flex-1" }
                 if share.read_only {
-                    Badge { variant: BadgeVariant::Outline, "Read-Only" }
+                    Badge { variant: BadgeVariant::Secondary, "Read-Only" }
                 } else {
                     Badge { variant: BadgeVariant::Primary, "Read-Write" }
                 }

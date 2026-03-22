@@ -1,5 +1,4 @@
 mod manage_allowed_users;
-mod servers;
 mod shares;
 use std::ops::Deref;
 
@@ -12,7 +11,7 @@ use dioxus_primitives::checkbox::CheckboxState;
 use crate::{
     api::LoginStatus,
     components::{
-        button::Button,
+        button::{Button, ButtonVariant},
         card::{Card, CardContent, CardFooter, CardHeader, CardTitle},
         checkbox::Checkbox,
         input::Input,
@@ -47,10 +46,8 @@ pub(crate) enum Route {
     #[layout(NavbarLayout)]
     #[route("/")]
     Home {},
-    #[route("/logs/:logs_id")]
-    LogsPage { logs_id: String },
-    #[route("/manage-allowed-users")]
-    ManageAllowedUsersPage {},
+    #[route("/admin")]
+    AdminPage {},
 }
 
 #[component]
@@ -62,18 +59,21 @@ fn NavbarLayout() -> Element {
     });
 
     rsx! {
-        div { id: "navbar", class: "flex gap-4 border-b-1 border-gray-400 p-4",
-            Link { to: Route::Home {}, class: "font-bold", "Filen Relay" }
+        div {
+            id: "navbar",
+            class: "flex gap-4 border-b-1 border-gray-800 p-4 items-center",
+            img { class: "size-8", src: "https://filen.io/favicon.ico" }
+            Link { to: Route::Home {}, class: "font-bold text-lg", "Filen Relay" }
             div { class: "flex-1" }
             if let Some(auth) = AUTH.read().deref() {
-                span {
-                    "{auth.email}"
-                    if auth.is_admin {
-                        span { class: "text-red-500 ml-2", "(Admin)" }
+                span { "{auth.email}" }
+                if auth.is_admin {
+                    Link { to: Route::AdminPage {},
+                        Button { variant: ButtonVariant::Secondary, "Admin Options" }
                     }
                 }
-                a {
-                    class: "cursor-pointer hover:underline",
+                Button {
+                    variant: ButtonVariant::Secondary,
                     onclick: move |_| {
                         spawn(async move {
                             #[cfg(target_arch = "wasm32")]
@@ -265,8 +265,6 @@ pub(crate) fn App() -> Element {
 
 #[component]
 fn Home() -> Element {
-    let auth = AUTH.read();
-    let auth = auth.as_ref().unwrap();
     rsx! {
         h2 { "Your Shares" }
         Shares {}
@@ -274,15 +272,8 @@ fn Home() -> Element {
 }
 
 #[component]
-fn LogsPage(logs_id: String) -> Element {
-    rsx! {}
-}
-
-#[component]
-fn ManageAllowedUsersPage() -> Element {
+fn AdminPage() -> Element {
     rsx! {
         ManageAllowedUsers {}
     }
 }
-
-// todo: add in commented out uis again
