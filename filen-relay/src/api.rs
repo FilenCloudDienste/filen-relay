@@ -12,7 +12,7 @@ pub(crate) struct User {
     pub is_admin: bool,
 }
 
-#[post("/api/user", session: auth::Session)]
+#[post("/api/user", session: auth::AuthSession)]
 pub(crate) async fn get_user() -> Result<User> {
     Ok(User {
         email: session.filen_email,
@@ -20,18 +20,23 @@ pub(crate) async fn get_user() -> Result<User> {
     })
 }
 
-#[post("/api/login")]
+#[derive(Serialize, Deserialize)]
+pub(crate) enum LoginStatus {
+    InvalidCredentials,
+    TwoFactorRequired,
+    LoggedIn,
+}
+
+#[post("/api/login", session: tower_sessions::Session)]
 pub(crate) async fn login(
     email: String,
     password: String,
     two_factor_code: Option<String>,
-) -> Result<Response, anyhow::Error> {
-    let token = auth::login_and_get_session_token(email, password, two_factor_code).await?;
-    use dioxus::fullstack::{body::Body, response::Response};
-    Ok(Response::builder()
-        .header("Set-Cookie", format!("Session={}; HttpOnly; Path=/", token))
-        .body(Body::empty())
-        .unwrap())
+) -> Result<LoginStatus, anyhow::Error> {
+    let login_status = auth::login_and_get_session_token(session, email, password, two_factor_code)
+        .await
+        .inspect_err(|e| dioxus::logger::tracing::error!("Login error: {}", e))?;
+    Ok(login_status)
 }
 
 #[post("/api/logout")]
@@ -43,7 +48,7 @@ pub(crate) async fn logout() -> Result<Response> {
         .unwrap())
 }
 
-#[get("/api/shares", session: auth::Session)]
+#[get("/api/shares", session: auth::AuthSession)]
 pub(crate) async fn get_shares() -> Result<Vec<Share>, anyhow::Error> {
     Ok(DB
         .get_shares()
@@ -53,12 +58,13 @@ pub(crate) async fn get_shares() -> Result<Vec<Share>, anyhow::Error> {
         .collect())
 }
 
-#[post("/api/shares/add", session: auth::Session)]
+#[post("/api/shares/add", session: auth::AuthSession)]
 pub(crate) async fn add_share(
     root: String,
     read_only: bool,
     password: Option<String>,
 ) -> Result<(), anyhow::Error> {
+    let root = format!("/{}", root.trim_start_matches('/'));
     DB.create_share(&Share {
         id: ShareId::new(),
         root,
@@ -71,7 +77,7 @@ pub(crate) async fn add_share(
     .map_err(|e| anyhow::anyhow!("Failed to create share: {}", e))
 }
 
-#[post("/api/shares/remove", session: auth::Session)]
+#[post("/api/shares/remove", session: auth::AuthSession)]
 pub(crate) async fn remove_share(id: ShareId) -> Result<(), anyhow::Error> {
     DB.get_shares()
         .map_err(|e| anyhow::anyhow!("Failed to get shares from database: {}", e))?
@@ -83,7 +89,7 @@ pub(crate) async fn remove_share(id: ShareId) -> Result<(), anyhow::Error> {
         .map_err(|e| anyhow::anyhow!("Failed to remove share: {}", e))
 }
 
-#[get("/api/allowedUsers", session: auth::Session)]
+#[get("/api/allowedUsers", session: auth::AuthSession)]
 pub(crate) async fn get_allowed_users() -> Result<Vec<String>, anyhow::Error> {
     if !session.is_admin {
         return Err(anyhow::anyhow!("Unauthorized"));
@@ -92,7 +98,7 @@ pub(crate) async fn get_allowed_users() -> Result<Vec<String>, anyhow::Error> {
         .map_err(|e| anyhow::anyhow!("Failed to get allowed users: {}", e))
 }
 
-#[post("/api/allowedUsers/add", session: auth::Session)]
+#[post("/api/allowedUsers/add", session: auth::AuthSession)]
 pub(crate) async fn add_allowed_user(email: String) -> Result<(), anyhow::Error> {
     if !session.is_admin {
         return Err(anyhow::anyhow!("Unauthorized"));
@@ -102,7 +108,7 @@ pub(crate) async fn add_allowed_user(email: String) -> Result<(), anyhow::Error>
         .map_err(|e| anyhow::anyhow!("Failed to add allowed user: {}", e))
 }
 
-#[post("/api/allowedUsers/remove", session: auth::Session)]
+#[post("/api/allowedUsers/remove", session: auth::AuthSession)]
 pub(crate) async fn remove_allowed_user(email: String) -> Result<(), anyhow::Error> {
     if !session.is_admin {
         return Err(anyhow::anyhow!("Unauthorized"));
@@ -112,7 +118,7 @@ pub(crate) async fn remove_allowed_user(email: String) -> Result<(), anyhow::Err
         .map_err(|e| anyhow::anyhow!("Failed to remove allowed user: {}", e))
 }
 
-#[post("/api/allowedUsers/clear", session: auth::Session)]
+#[post("/api/allowedUsers/clear", session: auth::AuthSession)]
 pub(crate) async fn clear_allowed_users() -> Result<(), anyhow::Error> {
     if !session.is_admin {
         return Err(anyhow::anyhow!("Unauthorized"));
