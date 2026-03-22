@@ -1,13 +1,25 @@
 mod manage_allowed_users;
 mod servers;
+mod shares;
 use std::ops::Deref;
 
 use dioxus::{
     logger::tracing::{self},
     prelude::*,
 };
+use dioxus_primitives::checkbox::CheckboxState;
 
-use crate::frontend::manage_allowed_users::ManageAllowedUsers;
+use crate::{
+    api::LoginStatus,
+    components::{
+        button::Button,
+        card::{Card, CardContent, CardFooter, CardHeader, CardTitle},
+        checkbox::Checkbox,
+        input::Input,
+        label::Label,
+    },
+    frontend::{manage_allowed_users::ManageAllowedUsers, shares::Shares},
+};
 
 struct Authentication {
     pub email: String,
@@ -32,7 +44,7 @@ async fn fetch_authentication() {
 #[derive(Debug, Clone, Routable, PartialEq)]
 #[rustfmt::skip]
 pub(crate) enum Route {
-    #[layout(Navbar)]
+    #[layout(NavbarLayout)]
     #[route("/")]
     Home {},
     #[route("/logs/:logs_id")]
@@ -42,7 +54,7 @@ pub(crate) enum Route {
 }
 
 #[component]
-fn Navbar() -> Element {
+fn NavbarLayout() -> Element {
     use_effect(|| {
         spawn(async move {
             fetch_authentication().await;
@@ -130,28 +142,28 @@ fn Login() -> Element {
             Ok(login_status) => match login_status {
                 LoginStatus::LoggedIn => {
                     tracing::info!("Login successful");
-                #[cfg(target_arch = "wasm32")]
-                {
-                    if *save_credentials.read() {
-                        let options = wasm_cookies::cookies::CookieOptions::default()
-                            .with_path("/")
-                            .secure()
-                            .with_same_site(wasm_cookies::cookies::SameSite::Strict)
-                            .expires_after(std::time::Duration::from_hours(24 * 30));
-                        wasm_cookies::set("filen_email", &email(), &options);
-                        wasm_cookies::set("filen_password", &password(), &options);
-                        if let Some(code) = two_factor_code().as_deref() {
-                            wasm_cookies::set("filen_two_factor_code", code, &options);
-                        } else {
-                            wasm_cookies::delete("filen_two_factor_code");
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        if *save_credentials.read() {
+                            let options = wasm_cookies::cookies::CookieOptions::default()
+                                .with_path("/")
+                                .secure()
+                                .with_same_site(wasm_cookies::cookies::SameSite::Strict)
+                                .expires_after(std::time::Duration::from_hours(24 * 30));
+                            wasm_cookies::set("filen_email", &email(), &options);
+                            wasm_cookies::set("filen_password", &password(), &options);
+                            if let Some(code) = two_factor_code().as_deref() {
+                                wasm_cookies::set("filen_two_factor_code", code, &options);
+                            } else {
+                                wasm_cookies::delete("filen_two_factor_code");
+                            }
                         }
                     }
+                    fetch_authentication().await;
+                    email.set("".to_string());
+                    password.set("".to_string());
+                    two_factor_code.set(None);
                 }
-                fetch_authentication().await;
-                email.set("".to_string());
-                password.set("".to_string());
-                two_factor_code.set(None);
-            }
                 LoginStatus::TwoFactorRequired => {
                     tracing::info!("Two-factor authentication required");
                 }
@@ -168,66 +180,72 @@ fn Login() -> Element {
     };
 
     rsx! {
-        div { class: "w-full flex justify-center",
-            form {
-                class: "flex flex-col gap-2",
-                onsubmit: move |e| async move {
-                    e.prevent_default();
-                    login().await;
-                },
-                if *saved_credentials_pending.read() {
-                    div { class: "text-gray-500", "Loading saved credentials..." }
+        div { class: "flex justify-center",
+            Card {
+                CardHeader {
+                    CardTitle { "Login" }
                 }
-                div {
-                    label { "Email:" }
-                    input {
-                        class: "_input w-full",
-                        r#type: "email",
-                        value: "{email}",
-                        oninput: move |e| email.set(e.value().clone()),
-                    }
-                }
-                div {
-                    label { "Password:" }
-                    input {
-                        class: "_input w-full",
-                        r#type: "password",
-                        value: "{password}",
-                        oninput: move |e| password.set(e.value().clone()),
-                    }
-                }
-                div {
-                    label { "2FA Code (optional):" }
-                    input {
-                        class: "_input w-full",
-                        r#type: "text",
-                        value: format!("{}", two_factor_code().as_deref().unwrap_or("")),
-                        oninput: move |e| {
-                            let val = e.value().clone();
-                            if val.is_empty() {
-                                two_factor_code.set(None);
-                            } else {
-                                two_factor_code.set(Some(val));
-                            }
+                CardContent {
+                    form {
+                        id: "login-form",
+                        class: "grid gap-4",
+                        onsubmit: move |e| async move {
+                            e.prevent_default();
+                            login().await;
                         },
-                    }
-                }
-                div {
-                    label {
-                        input {
-                            class: "mr-2",
-                            r#type: "checkbox",
-                            checked: *save_credentials.read(),
-                            oninput: move |e| save_credentials.set(e.value().parse().unwrap_or(false)),
+                        if *saved_credentials_pending.read() {
+                            div { class: "text-gray-500", "Loading saved credentials..." }
                         }
-                        "Remember me"
+                        div { class: "grid gap-2",
+                            Label { html_for: "email", "Email:" }
+                            Input {
+                                r#type: "email",
+                                id: "email",
+                                value: "{email}",
+                                oninput: move |e: Event<FormData>| email.set(e.value().clone()),
+                            }
+                        }
+                        div { class: "grid gap-2",
+                            Label { html_for: "password", "Password:" }
+                            Input {
+                                r#type: "password",
+                                id: "password",
+                                value: "{password}",
+                                oninput: move |e: Event<FormData>| password.set(e.value().clone()),
+                            }
+                        }
+                        div { class: "grid gap-2",
+                            Label { html_for: "2fa-code", "2FA Code (optional):" }
+                            Input {
+                                r#type: "text",
+                                id: "2fa-code",
+                                value: format!("{}", two_factor_code().as_deref().unwrap_or("")),
+                                oninput: move |e: Event<FormData>| {
+                                    let val = e.value().clone();
+                                    if val.is_empty() {
+                                        two_factor_code.set(None);
+                                    } else {
+                                        two_factor_code.set(Some(val));
+                                    }
+                                },
+                            }
+                        }
+                        div { class: "flex gap-2 items-center",
+                            Checkbox {
+                                id: "save_credentials",
+                                on_checked_change: move |new_state| save_credentials.set(new_state == CheckboxState::Checked),
+                            }
+                            "Remember me"
+                        }
                     }
                 }
-                button {
-                    class: "_button",
-                    disabled: *loading.read(),
-                    r#type: "submit",
-                    "Login"
+                CardFooter {
+                    Button {
+                        r#type: "submit",
+                        form: "login-form",
+                        disabled: *loading.read(),
+                        "Login"
+                    }
                 }
             }
         }
@@ -240,6 +258,7 @@ pub(crate) fn App() -> Element {
         document::Title { "Filen Relay" }
         document::Link { rel: "icon", href: "https://filen.io/favicon.ico" }
         document::Link { rel: "stylesheet", href: asset!("/assets/tailwind.css") }
+        document::Stylesheet { href: asset!("/assets/dx-components-theme.css") }
         Router::<Route> {}
     }
 }
@@ -249,11 +268,8 @@ fn Home() -> Element {
     let auth = AUTH.read();
     let auth = auth.as_ref().unwrap();
     rsx! {
-        div { class: "flex flex-col gap-4",
-            if auth.is_admin {
-                Link { to: Route::ManageAllowedUsersPage {}, class: "_button", "Manage Allowed Users" }
-            }
-        }
+        h2 { "Your Shares" }
+        Shares {}
     }
 }
 
