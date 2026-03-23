@@ -3,7 +3,7 @@
 > [!IMPORTANT]
 > This project is in active development. **Do not use it.**
 
-Filen Relay provides a convenient way to serve your Filen Drive via WebDAV/HTTP/FTP/SFTP. Access the web interface to start multiple servers mapping to multiple users, manage basic permissions and view server logs. 
+Filen Relay provides a convenient way to serve your Filen Drive via WebDAV/HTTP/FTP/SFTP. Access the web interface to create shares mapping to multiple users, and manage basic permissions.
 
 ## Installation
 
@@ -24,3 +24,9 @@ Configuration options (choose one):
 ### In the Public Cloud (Scaleway)
 
 Download the latest Filen Relay Deployer from this project's release page. Execute it in a terminal and follow the instructions to deploy your Filen Relay as a Scaleway Serverless Container, which can scale to zero when not in use. The Deployer has some configuration options (use `--help` to see them). 
+
+## Usage
+
+After installation, access the web interface and log in with your Filen account.
+Admins have admin options there.
+Create shares and open them (replace `/s/` in the path with `/webdav/`, `/s3/`, `/ftp/` or `/sftp/` to get the respective URL).
