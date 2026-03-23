@@ -197,7 +197,7 @@ fn Login() -> Element {
                             div { class: "text-gray-500", "Loading saved credentials..." }
                         }
                         div { class: "grid gap-2",
-                            Label { html_for: "email", "Email:" }
+                            Label { html_for: "email", "Filen Email:" }
                             Input {
                                 r#type: "email",
                                 id: "email",
@@ -206,7 +206,7 @@ fn Login() -> Element {
                             }
                         }
                         div { class: "grid gap-2",
-                            Label { html_for: "password", "Password:" }
+                            Label { html_for: "password", "Filen Password:" }
                             Input {
                                 r#type: "password",
                                 id: "password",
@@ -215,7 +215,7 @@ fn Login() -> Element {
                             }
                         }
                         div { class: "grid gap-2",
-                            Label { html_for: "2fa-code", "2FA Code (optional):" }
+                            Label { html_for: "2fa-code", "2FA Code (if needed):" }
                             Input {
                                 r#type: "text",
                                 id: "2fa-code",

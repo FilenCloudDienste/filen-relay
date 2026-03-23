@@ -34,9 +34,7 @@ rand = { version = "0.10.0", optional = true }
 ftail = { version = "0.3.1", optional = true }
 log = { version = "0.4.29", optional = true }
 tempfile = { version = "3.27.0", optional = true }
-dioxus-primitives = { git = "https://github.com/DioxusLabs/components", version = "0.0.1", default-features = false, features = [
-    "router",
-] }
+dioxus-primitives = { git = "https://github.com/DioxusLabs/components", version = "0.0.1", default-features = false, features = ["router"] }
 tower-sessions = { version = "0.15.0", optional = true }
 
 [features]

@@ -12,7 +12,8 @@ use dioxus::server::axum::{
 use http::Uri;
 
 use crate::backend::rclone_auth_proxy::handle_rclone_remote_config_request;
-use crate::backend::server_manager::{ServerManager, ServerType};
+use crate::backend::server_manager::ServerManager;
+use crate::common::ServerType;
 use crate::{
     backend::{
         auth::ADMIN_EMAIL,

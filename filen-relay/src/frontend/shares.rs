@@ -1,13 +1,19 @@
+use crate::components::{
+    label::Label,
+    select::{SelectGroupLabel, SelectOption, SelectTrigger},
+};
 use dioxus::prelude::*;
 use dioxus_primitives::checkbox::CheckboxState;
+use strum::IntoEnumIterator as _;
 
 use crate::{
-    common::Share,
+    common::{ServerType, Share},
     components::{
         badge::{Badge, BadgeVariant},
         button::{Button, ButtonVariant},
         checkbox::Checkbox,
         input::Input,
+        select::{Select, SelectGroup, SelectItemIndicator, SelectList, SelectValue},
     },
 };
 
@@ -26,12 +32,43 @@ pub(crate) fn Shares() -> Element {
         fetch_shares();
     });
 
+    let mut open_as = use_signal(|| Some(Some(ServerType::Http)));
+    let open_as_options = ServerType::iter().enumerate().map(|(i, server_type)| {
+        rsx! {
+            SelectOption::<ServerType> {
+                index: i,
+                value: server_type.clone(),
+                text_value: format!("{}", server_type),
+                {format!("{}", server_type)}
+                SelectItemIndicator {}
+            }
+        }
+    });
+
     match (*shares)() {
         Some(shares) => rsx! {
+            div { class: "grid gap-2 my-4",
+                Label { html_for: "open-as-select", "Open shares as:" }
+                Select::<ServerType> {
+                    id: "open-as-select",
+                    value: open_as,
+                    on_value_change: move |new_open_as: Option<ServerType>| {
+                        open_as.set(Some(Some(new_open_as.unwrap_or_default())))
+                    },
+                    SelectTrigger { width: "12rem", SelectValue {} }
+                    SelectList {
+                        SelectGroup {
+                            SelectGroupLabel { "Server Type" }
+                            {open_as_options}
+                        }
+                    }
+                }
+            }
             div { class: "flex flex-col gap-2",
                 for share in shares {
                     ShareCard {
                         share: share.clone(),
+                        open_as: open_as.cloned().unwrap().unwrap_or_default(),
                         on_remove: move |_| fetch_shares(),
                     }
                 }
@@ -45,9 +82,9 @@ pub(crate) fn Shares() -> Element {
 }
 
 #[component]
-pub(crate) fn ShareCard(share: Share, on_remove: EventHandler<()>) -> Element {
+pub(crate) fn ShareCard(share: Share, open_as: ServerType, on_remove: EventHandler<()>) -> Element {
     let open_external_icon = asset!("/assets/open-external-icon.svg");
-    let url = format!("/s/{}/", share.id.short());
+    let url = format!("/{}/{}", open_as.to_url_segment(), share.id.short());
     let mut removing = use_signal(|| false);
     rsx! {
         div { class: "card p-3! pl-4!",

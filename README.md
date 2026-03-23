@@ -24,9 +24,3 @@ Configuration options (choose one):
 ### In the Public Cloud (Scaleway)
 
 Download the latest Filen Relay Deployer from this project's release page. Execute it in a terminal and follow the instructions to deploy your Filen Relay as a Scaleway Serverless Container, which can scale to zero when not in use. The Deployer has some configuration options (use `--help` to see them). 
-
-## Usage
-
-After installation, access the web interface and log in with your Filen account.
-Admins have admin options there.
-Create shares and open them (replace `/s/` in the path with `/webdav/`, `/s3/`, `/ftp/` or `/sftp/` to get the respective URL).
