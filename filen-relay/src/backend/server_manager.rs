@@ -5,71 +5,12 @@ use anyhow::{Context, Result};
 use dioxus::logger::tracing;
 use filen_rclone_wrapper::rclone_installation::RcloneInstallation;
 use filen_rclone_wrapper::rclone_installation::RcloneInstallationConfig;
-use serde::Deserialize;
-use serde::Serialize;
 use strum::IntoEnumIterator as _;
-use strum_macros::EnumIter;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
 
 use crate::backend::rclone_auth_proxy::generate_rclone_auth_proxy_args;
-
-#[derive(EnumIter, PartialEq)]
-pub(crate) enum ServerType {
-    Http,
-    Webdav,
-    S3,
-    Ftp,
-    Sftp,
-}
-
-impl Serialize for ServerType {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let s = match self {
-            ServerType::Http => "s",
-            ServerType::Webdav => "webdav",
-            ServerType::S3 => "s3",
-            ServerType::Ftp => "ftp",
-            ServerType::Sftp => "sftp",
-        };
-        serializer.serialize_str(s)
-    }
-}
-
-impl ServerType {
-    fn to_rclone_serve_arg(&self) -> &'static str {
-        match self {
-            ServerType::Http => "http",
-            ServerType::Webdav => "webdav",
-            ServerType::S3 => "s3",
-            ServerType::Ftp => "ftp",
-            ServerType::Sftp => "sftp",
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for ServerType {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        match s.as_str() {
-            "s" => Ok(ServerType::Http),
-            "webdav" => Ok(ServerType::Webdav),
-            "s3" => Ok(ServerType::S3),
-            "ftp" => Ok(ServerType::Ftp),
-            "sftp" => Ok(ServerType::Sftp),
-            _ => Err(serde::de::Error::custom(format!(
-                "Unknown server type: {}",
-                s
-            ))),
-        }
-    }
-}
+use crate::common::ServerType;
 
 pub(crate) struct ServerManager {
     processes: Vec<RcloneServerProcess>,
@@ -116,14 +57,13 @@ impl ServerManager {
             let (mut process, _) =
                 RcloneInstallation::initialize_unauthenticated(&RcloneInstallationConfig {
                     rclone_binary_dir: config_dir.clone(),
-                    config_dir: config_dir
-                        .join(format!("server_{}", server_type.to_rclone_serve_arg())),
+                    config_dir: config_dir.join(format!("server_{}", server_type.to_str())),
                 })
                 .await
                 .context("Failed to initialize Rclone installation")?
                 .execute_in_background(&[
                     "serve",
-                    server_type.to_rclone_serve_arg(),
+                    server_type.to_str(),
                     "--addr",
                     &format!(":{}", port),
                     "--auth-proxy",
@@ -136,22 +76,23 @@ impl ServerManager {
             // todo: handle process termination (health checks?) and restarts
 
             // handle logs
-            let server_type_str = server_type.to_rclone_serve_arg();
             {
                 let process_stdout = process.stdout.take().unwrap();
+                let server_type = server_type.clone();
                 tokio::spawn(async move {
                     let mut reader = BufReader::new(process_stdout).lines();
                     while let Ok(Some(line)) = reader.next_line().await {
-                        tracing::debug!("Rclone server {} stdout: {}", server_type_str, line);
+                        tracing::debug!("Rclone server {} stdout: {}", server_type, line);
                     }
                 });
             }
             {
                 let process_stderr = process.stderr.take().unwrap();
+                let server_type = server_type.clone();
                 tokio::spawn(async move {
                     let mut reader = BufReader::new(process_stderr).lines();
                     while let Ok(Some(line)) = reader.next_line().await {
-                        tracing::debug!("Rclone server {} stderr: {}", server_type_str, line);
+                        tracing::debug!("Rclone server {} stderr: {}", server_type, line);
                     }
                 });
             }
