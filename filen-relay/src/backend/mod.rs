@@ -12,7 +12,7 @@ use dioxus::server::axum::{
 use http::Uri;
 
 use crate::backend::rclone_auth_proxy::handle_rclone_remote_config_request;
-use crate::backend::server_manager::ServerManager;
+use crate::backend::server_manager::{ServerManager, ServerType};
 use crate::{
     backend::{
         auth::ADMIN_EMAIL,
@@ -79,22 +79,27 @@ pub(crate) fn serve(args: Args) {
             let router = auth::initialize_session_manager(router);
             Ok(router
                 .route(
-                    "/s/{id}",
-                    axum::routing::any(|Path(id): Path<String>, req: Request| async move {
-                        handle_rclone_request(server_manager_1, "http", id, req).await
-                    }),
-                )
-                .route(
-                    "/s/{id}/",
-                    axum::routing::any(|Path(id): Path<String>, req: Request| async move {
-                        handle_rclone_request(server_manager_2, "http", id, req).await
-                    }),
-                )
-                .route(
-                    "/s/{id}/{*rest}",
+                    "/{server_type}/{id}",
                     axum::routing::any(
-                        |Path((id, _rest)): Path<(String, String)>, req: Request| async move {
-                            handle_rclone_request(server_manager_3, "http", id, req).await
+                        |Path((server_type, id)): Path<(ServerType, String)>, req: Request| async move {
+                            handle_rclone_request(server_manager_1, &server_type, id, req).await
+                        },
+                    ),
+                )
+                .route(
+                    "/{server_type}/{id}/",
+                    axum::routing::any(
+                        |Path((server_type, id)): Path<(ServerType, String)>, req: Request| async move {
+                            handle_rclone_request(server_manager_2, &server_type, id, req).await
+                        },
+                    ),
+                )
+                .route(
+                    "/{server_type}/{id}/{*rest}",
+                    axum::routing::any(
+                        |Path((server_type, id, _rest)): Path<(ServerType, String, String)>,
+                         req: Request| async move {
+                            handle_rclone_request(server_manager_3, &server_type, id, req).await
                         },
                     ),
                 )
@@ -104,13 +109,14 @@ pub(crate) fn serve(args: Args) {
                         handle_rclone_remote_config_request(share_id, req)
                     }),
                 ))
+            // todo: add info somewhere that these routes exist
         }
     });
 }
 
 async fn handle_rclone_request(
     server_manager: std::sync::Arc<server_manager::ServerManager>,
-    server_type: &str,
+    server_type: &ServerType,
     id: String,
     mut req: Request,
 ) -> Response {
