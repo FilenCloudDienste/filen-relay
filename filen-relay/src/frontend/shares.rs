@@ -88,7 +88,7 @@ pub(crate) fn ShareCard(share: Share, open_as: ServerType, on_remove: EventHandl
     let mut removing = use_signal(|| false);
     rsx! {
         div { class: "card p-3! pl-4!",
-            div { class: "flex items-center gap-2",
+            div { class: "flex items-center gap-2 flex-wrap",
                 a {
                     class: "font-semibold flex items-center gap-2 cursor-pointer",
                     href: url,
@@ -97,31 +97,33 @@ pub(crate) fn ShareCard(share: Share, open_as: ServerType, on_remove: EventHandl
                     img { src: open_external_icon, style: "color: #ffffff" }
                 }
                 div { class: "flex-1" }
-                if share.read_only {
-                    Badge { variant: BadgeVariant::Secondary, "Read-Only" }
-                } else {
-                    Badge { variant: BadgeVariant::Primary, "Read-Write" }
-                }
-                if share.password.is_some() {
-                    Badge { variant: BadgeVariant::Primary, "Password-Protected" }
-                }
-                Button {
-                    class: "ml-2",
-                    variant: ButtonVariant::Destructive,
-                    disabled: *removing.read(),
-                    onclick: move |_| {
-                        removing.set(true);
-                        let share_id = share.clone().id.clone();
-                        async move {
-                            match crate::api::remove_share(share_id).await {
-                                Ok(_) => on_remove.call(()),
-                                Err(e) => {
-                                    dioxus::logger::tracing::error!("Failed to remove share: {}", e)
+                div { class: "flex items-center gap-2",
+                    if share.read_only {
+                        Badge { variant: BadgeVariant::Secondary, "Read-Only" }
+                    } else {
+                        Badge { variant: BadgeVariant::Primary, "Read-Write" }
+                    }
+                    if share.password.is_some() {
+                        Badge { variant: BadgeVariant::Primary, "Password-Protected" }
+                    }
+                    Button {
+                        class: "ml-2",
+                        variant: ButtonVariant::Destructive,
+                        disabled: *removing.read(),
+                        onclick: move |_| {
+                            removing.set(true);
+                            let share_id = share.clone().id.clone();
+                            async move {
+                                match crate::api::remove_share(share_id).await {
+                                    Ok(_) => on_remove.call(()),
+                                    Err(e) => {
+                                        dioxus::logger::tracing::error!("Failed to remove share: {}", e)
+                                    }
                                 }
                             }
-                        }
-                    },
-                    "Remove"
+                        },
+                        "Remove"
+                    }
                 }
             }
         }
