@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use clap::{command, Parser};
+use clap::Parser;
 use filen_cli::serialize_auth_config;
 use filen_sdk_rs::{auth::Client, ErrorKind};
 use filen_types::error::ResponseError;
