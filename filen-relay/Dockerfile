@@ -2,19 +2,19 @@
 # cd .. && docker build -f filen-relay/Dockerfile . -t filen-relay && cd filen-relay
 
 # see https://dioxuslabs.com/learn/0.7/tutorial/deploy#building-a-dockerfile
-# using nightly-2025-08-14 toolchain as per rust-toolchain.toml
+# using nightly-2026-02-20 toolchain as per rust-toolchain.toml
 
 FROM rust:1 AS chef
-RUN cargo +nightly-2025-08-14 install cargo-chef
+RUN cargo +nightly-2026-02-20 install cargo-chef
 WORKDIR /app
 
 FROM chef AS planner
 COPY . .
-RUN cargo +nightly-2025-08-14 chef prepare --recipe-path recipe.json
+RUN cargo +nightly-2026-02-20 chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
-RUN cargo +nightly-2025-08-14 chef cook --release --recipe-path recipe.json
+RUN cargo +nightly-2026-02-20 chef cook --release --recipe-path recipe.json
 RUN rustup target add wasm32-unknown-unknown
 # install dioxus-cli
 RUN curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
