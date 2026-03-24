@@ -144,6 +144,30 @@ async fn handle_rclone_request(
         .map(|pos| &request_path[..(pos + id.len())])
         .unwrap();
     if let Some(share) = shares.into_iter().find(|s| s.id.short() == id) {
+        // check password
+        if let Some(password) = &share.password {
+            let auth_header = req
+                .headers()
+                .get("authorization")
+                .and_then(|h| h.to_str().ok())
+                .unwrap_or("");
+            let auth_header = auth_header.strip_prefix("Basic ").unwrap_or("");
+            let auth_header = BASE64_STANDARD.decode(auth_header).unwrap_or_default();
+            let auth_header = String::from_utf8_lossy(&auth_header);
+            if !auth_header.ends_with(password) {
+                return Response::builder()
+                    .status(axum::http::StatusCode::UNAUTHORIZED)
+                    .header(
+                        "WWW-Authenticate",
+                        format!("Basic realm=\"share {}\"", share.id),
+                    )
+                    .body(Body::from(
+                        "This share needs a password to access. No username is needed.",
+                    ))
+                    .unwrap();
+            }
+        }
+
         match server_manager
             .get_port_for_forwarded_request(server_type)
             .await
