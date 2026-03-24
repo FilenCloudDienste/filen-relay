@@ -9,7 +9,7 @@ use dioxus::{
 use dioxus_primitives::checkbox::CheckboxState;
 
 use crate::{
-    api::LoginStatus,
+    api::{get_admin_email, LoginStatus},
     components::{
         button::{Button, ButtonVariant},
         card::{Card, CardContent, CardFooter, CardHeader, CardTitle},
@@ -184,6 +184,8 @@ fn Login() -> Element {
         loading.set(false);
     };
 
+    let admin_email = use_resource(move || async move { get_admin_email().await });
+
     rsx! {
         div { class: "flex justify-center",
             Card {
@@ -191,6 +193,15 @@ fn Login() -> Element {
                     CardTitle { "Login" }
                 }
                 CardContent {
+                    p { class: "max-w-md -mt-3 mb-5 text-sm",
+                        "Enter your Filen credentials below. "
+                        "Please note that the host of this instance of Filen Relay"
+                        if let Some(Ok(admin_email)) = &*admin_email.read() {
+                            ", {admin_email},"
+                        }
+                        " will have access to your Filen credentials in order to decrypt and relay your files, "
+                        "and thus also have access to your Filen account. Make sure you trust the host before logging in."
+                    }
                     form {
                         id: "login-form",
                         class: "grid gap-4",

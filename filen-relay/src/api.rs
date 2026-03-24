@@ -12,6 +12,14 @@ pub(crate) struct User {
     pub is_admin: bool,
 }
 
+#[get("/api/admin")]
+pub(crate) async fn get_admin_email() -> Result<String, anyhow::Error> {
+    crate::backend::auth::ADMIN_EMAIL
+        .get()
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("Admin email not set"))
+}
+
 #[post("/api/user", session: auth::AuthSession)]
 pub(crate) async fn get_user() -> Result<User> {
     Ok(User {
