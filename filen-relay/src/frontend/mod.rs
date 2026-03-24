@@ -233,6 +233,7 @@ fn Login() -> Element {
                         div { class: "flex gap-2 items-center",
                             Checkbox {
                                 id: "save_credentials",
+                                checked: if *save_credentials.read() { CheckboxState::Checked } else { CheckboxState::Unchecked },
                                 on_checked_change: move |new_state| save_credentials.set(new_state == CheckboxState::Checked),
                             }
                             "Remember me"

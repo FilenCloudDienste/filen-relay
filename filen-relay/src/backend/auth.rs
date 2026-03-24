@@ -85,7 +85,6 @@ where
             .extensions
             .get::<SessionToken>()
             .and_then(|token| {
-                dioxus::logger::tracing::info!("Extracted session token: {}", token);
                 SESSIONS
                     .lock()
                     .unwrap()

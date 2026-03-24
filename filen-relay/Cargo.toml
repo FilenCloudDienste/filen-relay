@@ -19,9 +19,9 @@ uuid = { version = "1.20.0", features = ["v4", "js"] }
 strum = "0.27.2"
 strum_macros = "0.27.2"
 tokio = { version = "1.49.0", features = ["macros"], optional = true }
-port_check = "0.3.0"
-chrono = { version = "0.4.43", features = ["serde"] }
-clap = { version = "4.5.56", features = ["derive", "env"] }
+port_check = { version = "0.3.0", optional = true }
+chrono = { version = "0.4.43", features = ["serde"], optional = true }
+clap = { version = "4.5.56", features = ["derive", "env"], optional = true }
 axum-reverse-proxy = { version = "1.1.1", features = [
     "native-tls",
 ], optional = true }
@@ -34,7 +34,9 @@ rand = { version = "0.10.0", optional = true }
 ftail = { version = "0.3.1", optional = true }
 log = { version = "0.4.29", optional = true }
 tempfile = { version = "3.27.0", optional = true }
-dioxus-primitives = { git = "https://github.com/DioxusLabs/components", version = "0.0.1", default-features = false, features = ["router"] }
+dioxus-primitives = { git = "https://github.com/DioxusLabs/components", version = "0.0.1", default-features = false, features = [
+    "router",
+] }
 tower-sessions = { version = "0.15.0", optional = true }
 
 [features]
@@ -47,6 +49,9 @@ server = [
     "filen-rclone-wrapper",
     "filen-types",
     "tokio",
+    "port_check",
+    "chrono",
+    "clap",
     "axum-reverse-proxy",
     "filen-cli",
     "rand",
