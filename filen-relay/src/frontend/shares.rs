@@ -156,8 +156,8 @@ pub(crate) fn CreateShareCard(on_create: EventHandler<()>) -> Element {
                     e.prevent_default();
                     create().await;
                 },
-                div { class: "flex items-center gap-2",
-                    div { class: "flex items-center gap-4",
+                div { class: "flex items-center gap-2 justify-between flex-wrap",
+                    div { class: "flex items-center gap-4 flex-wrap",
                         Input {
                             id: "root",
                             placeholder: "/path/to/share",
@@ -186,13 +186,13 @@ pub(crate) fn CreateShareCard(on_create: EventHandler<()>) -> Element {
                             },
                         }
                     }
-                    // todo: options
-                    div { class: "flex-1" }
-                    Button {
-                        r#type: "submit",
-                        variant: ButtonVariant::Primary,
-                        disabled: !is_valid || *creating.read(),
-                        "Create Share"
+                    div { class: "ml-auto",
+                        Button {
+                            r#type: "submit",
+                            variant: ButtonVariant::Primary,
+                            disabled: !is_valid || *creating.read(),
+                            "Create Share"
+                        }
                     }
                 }
             }

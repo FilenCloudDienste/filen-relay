@@ -58,48 +58,106 @@ fn NavbarLayout() -> Element {
         });
     });
 
-    rsx! {
-        div {
-            id: "navbar",
-            class: "flex gap-4 border-b-1 border-gray-800 p-4 items-center",
-            img { class: "size-8", src: "https://filen.io/favicon.ico" }
-            Link { to: Route::Home {}, class: "font-bold text-lg", "Filen Relay" }
-            div { class: "flex-1" }
-            if let Some(auth) = AUTH.read().deref() {
-                span { "{auth.email}" }
-                if auth.is_admin {
-                    Link { to: Route::AdminPage {},
-                        Button { variant: ButtonVariant::Secondary, "Admin Options" }
-                    }
+    let mut navbar_expanded = use_signal(|| false);
+    let logout = || {
+        spawn(async move {
+            #[cfg(target_arch = "wasm32")]
+            {
+                wasm_cookies::delete("filen_email");
+                wasm_cookies::delete("filen_password");
+                wasm_cookies::delete("filen_two_factor_code");
+            }
+            match crate::api::logout().await {
+                Ok(_) => {
+                    tracing::info!("Logged out successfully");
+                    *AUTH.write() = None;
                 }
-                Button {
-                    variant: ButtonVariant::Secondary,
-                    onclick: move |_| {
-                        spawn(async move {
-                            #[cfg(target_arch = "wasm32")]
-                            {
-                                wasm_cookies::delete("filen_email");
-                                wasm_cookies::delete("filen_password");
-                                wasm_cookies::delete("filen_two_factor_code");
-                            }
-                            match crate::api::logout().await {
-                                Ok(_) => {
-                                    tracing::info!("Logged out successfully");
-                                    *AUTH.write() = None;
-                                }
-                                Err(err) => {
-                                    tracing::error!("Logout failed: {}", err);
-                                }
-                            }
-                        });
-                    },
-                    "Logout"
+                Err(err) => {
+                    tracing::error!("Logout failed: {}", err);
                 }
             }
-            a {
-                href: "https://github.com/FilenCloudDienste/filen-relay",
-                target: "_blank",
-                img { class: "size-8", src: asset!("/assets/github-icon.svg") }
+        })
+    };
+    rsx! {
+        div { id: "navbar", class: "border-b-1 border-gray-800 p-4",
+            div { class: "flex items-center gap-4",
+                img { class: "size-8", src: "https://filen.io/favicon.ico" }
+                Link { to: Route::Home {}, class: "font-bold text-lg", "Filen Relay" }
+                div { class: "flex-1" }
+
+                div { class: "hidden md:flex items-center gap-4",
+                    if let Some(auth) = AUTH.read().deref() {
+                        span { "{auth.email}" }
+                        if auth.is_admin {
+                            Link { to: Route::AdminPage {},
+                                Button { variant: ButtonVariant::Secondary, "Admin Options" }
+                            }
+                        }
+                        Button {
+                            variant: ButtonVariant::Secondary,
+                            onclick: move |_| {
+                                logout();
+                            },
+                            "Logout"
+                        }
+                    }
+                    a {
+                        href: "https://github.com/FilenCloudDienste/filen-relay",
+                        target: "_blank",
+                        img {
+                            class: "size-8",
+                            src: asset!("/assets/github-icon.svg"),
+                        }
+                    }
+                }
+
+                Button {
+                    variant: ButtonVariant::Secondary,
+                    class: "md:hidden",
+                    onclick: move |_| {
+                        let is_open = *navbar_expanded.read();
+                        navbar_expanded.set(!is_open);
+                    },
+                    if *navbar_expanded.read() {
+                        "Close"
+                    } else {
+                        "Menu"
+                    }
+                }
+            }
+
+            if *navbar_expanded.read() {
+                div { class: "mt-5 flex flex-col gap-3 md:hidden",
+                    if let Some(auth) = AUTH.read().deref() {
+                        span { class: "text-gray-300", "Logged in as: {auth.email}" }
+                        if auth.is_admin {
+                            Link { to: Route::AdminPage {},
+                                Button {
+                                    variant: ButtonVariant::Secondary,
+                                    class: "w-full",
+                                    "Admin Options"
+                                }
+                            }
+                        }
+                        Button {
+                            variant: ButtonVariant::Secondary,
+                            class: "w-full",
+                            onclick: move |_| {
+                                logout();
+                            },
+                            "Logout"
+                        }
+                    }
+                    a {
+                        href: "https://github.com/FilenCloudDienste/filen-relay",
+                        target: "_blank",
+                        class: "inline-flex w-fit ml-auto",
+                        img {
+                            class: "size-8",
+                            src: asset!("/assets/github-icon.svg"),
+                        }
+                    }
+                }
             }
         }
         div { class: "p-4",
