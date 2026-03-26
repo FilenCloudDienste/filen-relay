@@ -310,7 +310,11 @@ fn Login() -> Element {
                                 checked: if *save_credentials.read() { CheckboxState::Checked } else { CheckboxState::Unchecked },
                                 on_checked_change: move |new_state| save_credentials.set(new_state == CheckboxState::Checked),
                             }
-                            "Remember me"
+                            label {
+                                r#for: "save_credentials",
+                                class: "cursor-pointer",
+                                "Remember me"
+                            }
                         }
                     }
                 }

@@ -29,6 +29,7 @@ pub(crate) mod auth;
 pub(crate) mod db;
 pub(crate) mod rclone_auth_proxy;
 pub(crate) mod server_manager;
+pub(crate) mod util;
 
 pub(crate) fn serve(args: Args) {
     dioxus::serve(move || {

@@ -4,7 +4,6 @@ mod backend;
 mod common;
 mod components;
 mod frontend;
-mod util;
 
 #[cfg(feature = "server")]
 #[derive(clap::Parser, Clone)]

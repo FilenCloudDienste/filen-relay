@@ -1,6 +1,9 @@
-use crate::components::{
-    label::Label,
-    select::{SelectGroupLabel, SelectOption, SelectTrigger},
+use crate::{
+    api::ShareRootType,
+    components::{
+        label::Label,
+        select::{SelectGroupLabel, SelectOption, SelectTrigger},
+    },
 };
 use dioxus::prelude::*;
 use dioxus_primitives::checkbox::CheckboxState;
@@ -95,6 +98,7 @@ pub(crate) fn ShareCard(share: Share, open_as: ServerType, on_remove: EventHandl
                     target: "_blank",
                     "{share.root}"
                     img { src: open_external_icon, style: "color: #ffffff" }
+                                // todo: display copy icon instead when server type is not web
                 }
                 div { class: "flex-1" }
                 div { class: "flex items-center gap-2",
@@ -160,11 +164,16 @@ pub(crate) fn CreateShareCard(on_create: EventHandler<()>) -> Element {
                 },
                 div { class: "flex items-center gap-2 justify-between flex-wrap",
                     div { class: "flex items-center gap-4 flex-wrap",
-                        Input {
-                            id: "root",
-                            placeholder: "/path/to/share",
-                            value: "{root}",
-                            oninput: move |e: Event<FormData>| root.set(e.value().clone()),
+                        div { class: "flex flex-col gap-1",
+                            Input {
+                                id: "root",
+                                placeholder: "/path/to/share or ID",
+                                value: "{root}",
+                                oninput: move |e: Event<FormData>| root.set(e.value().clone()),
+                            }
+                            if root.len() > 0 {
+                                ShareRootChecker { root }
+                            }
                         }
                         div { class: "flex gap-2 items-center",
                             Checkbox {
@@ -199,5 +208,43 @@ pub(crate) fn CreateShareCard(on_create: EventHandler<()>) -> Element {
                 }
             }
         }
+    }
+}
+
+#[component]
+fn ShareRootChecker(root: ReadSignal<String>) -> Element {
+    let mut checked_root = use_action(move |root: String| async move {
+        match crate::api::check_and_transform_root(root).await {
+            Ok(checked_root) => Ok(checked_root),
+            Err(e) => {
+                dioxus::logger::tracing::error!("Failed to check root: {}", e);
+                Err(e)
+            }
+        }
+    });
+    use_effect(move || {
+        checked_root.call(root());
+    });
+    match checked_root.value() {
+        Some(Ok(checked_root)) => {
+            let item_type = match checked_root.read().item_type {
+                ShareRootType::File => "file",
+                ShareRootType::Dir => "directory",
+                ShareRootType::Root => "root",
+            };
+            let path = checked_root.read().path.clone();
+            rsx! {
+                div { class: "text-green-400 text-sm flex gap-1",
+                    "Sharing "
+                    span { class: "font-semibold", "{item_type}" }
+                    " at "
+                    span { class: "font-semibold", "{path}" }
+                }
+            }
+        }
+        Some(Err(_)) => rsx! {
+            span { class: "text-red-400 text-sm", "Must be a valid path or ID" }
+        },
+        None => rsx! {},
     }
 }

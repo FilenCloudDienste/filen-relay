@@ -8,8 +8,7 @@ use filen_sdk_rs::{
 use rusqlite::Connection;
 
 use crate::{
-    common::{ShareId, Share},
-    util::UnwrapOnceLock,
+    backend::util::UnwrapOnceLock, common::{Share, ShareId}
 };
 
 // todo: is it good (or safe) that this needs to be .lock().unwrap() everywhere?

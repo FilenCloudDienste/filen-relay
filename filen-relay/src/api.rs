@@ -56,6 +56,87 @@ pub(crate) async fn logout() -> Result<Response> {
         .unwrap())
 }
 
+#[derive(Serialize, Deserialize)]
+pub(crate) struct CheckedShareRoot {
+    pub path: String,
+    pub item_type: ShareRootType,
+}
+
+#[derive(Serialize, Deserialize)]
+pub(crate) enum ShareRootType {
+    Root,
+    File,
+    Dir,
+}
+
+#[post("/api/checkRoot", session: auth::AuthSession)]
+pub(crate) async fn check_and_transform_root(
+    root: String,
+) -> Result<CheckedShareRoot, anyhow::Error> {
+    use super::backend::util::{find_path_for_dir, find_path_for_file};
+    use filen_sdk_rs::fs::categories::NonRootFileType;
+    use filen_types::fs::UuidStr;
+
+    // check if it is a uuid
+    if let Ok(uuid) = uuid::Uuid::try_parse(&root) {
+        dioxus::logger::tracing::info!("Checking root as UUID: {}", uuid);
+        // try to find a dir with the uuid
+        match session.filen_client.get_dir(UuidStr::from(&uuid)).await {
+            Ok(dir) => {
+                let path = find_path_for_dir(session.filen_client.as_ref(), dir).await?;
+                Ok(CheckedShareRoot {
+                    path,
+                    item_type: ShareRootType::Dir,
+                })
+            }
+            Err(e1) => {
+                // try to find a file with the uuid
+                match session.filen_client.get_file(UuidStr::from(&uuid)).await {
+                    Ok(file) => {
+                        let path = find_path_for_file(session.filen_client.as_ref(), file).await?;
+                        Ok(CheckedShareRoot {
+                            path,
+                            item_type: ShareRootType::File,
+                        })
+                    }
+                    Err(e2) => Err(anyhow::anyhow!(
+                        "Failed to find dir ({}), also failed to find file ({}), for provided UUID",
+                        e1,
+                        e2
+                    )),
+                }
+            }
+        }
+    } else {
+        let root = format!("/{}", root.trim_start_matches('/').trim_end_matches('/'));
+        // not a uuid, try to find a dir with the path
+        match session.filen_client.find_item_at_path(&root).await {
+            Ok(item) => match item {
+                Some(item) => match item {
+                    NonRootFileType::Root(_) => Ok(CheckedShareRoot {
+                        path: root,
+                        item_type: ShareRootType::Root,
+                    }),
+                    NonRootFileType::File(_) => Ok(CheckedShareRoot {
+                        path: root,
+                        item_type: ShareRootType::File,
+                    }),
+                    NonRootFileType::Dir(_) => Ok(CheckedShareRoot {
+                        path: root,
+                        item_type: ShareRootType::Dir,
+                    }),
+                }
+                None => Err(anyhow::anyhow!("No item found at provided path")),
+            },
+            Err(e) => Err(anyhow::anyhow!(
+                "Failed to find dir at path ({}), also failed to find file at path ({}), for provided path",
+                e,
+                e
+            )),
+        }
+    }
+}
+
 #[get("/api/shares", session: auth::AuthSession)]
 pub(crate) async fn get_shares() -> Result<Vec<Share>, anyhow::Error> {
     Ok(DB
@@ -72,7 +153,10 @@ pub(crate) async fn add_share(
     read_only: bool,
     password: Option<String>,
 ) -> Result<(), anyhow::Error> {
-    let root = format!("/{}", root.trim_start_matches('/'));
+    let root = check_and_transform_root(root)
+        .await
+        .context("Failed to check root")?
+        .path;
     DB.create_share(&Share {
         id: ShareId::new(),
         root,

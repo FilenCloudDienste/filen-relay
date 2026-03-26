@@ -10,8 +10,10 @@ Filen Relay provides a convenient way to serve your Filen Drive via WebDAV/HTTP/
 ### On Your Machine
 
 ```bash
-docker run -e FILEN_RELAY_ADMIN_EMAIL='your-filen-account@email.com' -p 80:80 ghcr.io/FilenCloudDienste/filen-relay:main
+docker run -e FILEN_RELAY_ADMIN_EMAIL='your-filen-account@email.com' -p 80:80 ghcr.io/filenclouddienste/filen-relay:main
 ```
+
+<!-- todo: fix issues here -->
 
 Configuration options (choose one):
 - Set `--admin-email` (`FILEN_RELAY_ADMIN_EMAIL`) and `--db-dir` (`FILEN_RELAY_DB_DIR`) options (or environment variables) to create a normal deployment.

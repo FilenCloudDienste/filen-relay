@@ -50,7 +50,6 @@ impl ServerManager {
             let mut perms = script_file.as_file().metadata()?.permissions();
             perms.set_mode(0o755);
             script_file.as_file().set_permissions(perms)?;
-            dbg!(script_file.path());
             // todo: can we avoid creating a platform-dependent shell script?
 
             // spawn rclone process
