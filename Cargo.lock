@@ -2339,7 +2339,7 @@ dependencies = [
 
 [[package]]
 name = "filen-relay"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "axum-core",
@@ -2372,7 +2372,7 @@ dependencies = [
 
 [[package]]
 name = "filen-relay-deployer"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "clap",
