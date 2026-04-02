@@ -7,10 +7,8 @@ pub mod button;
 pub mod card;
 #[allow(dead_code)]
 pub mod checkbox;
+pub mod dialog;
 #[allow(dead_code)]
 pub mod input;
 #[allow(dead_code)]
 pub mod label;
-#[allow(dead_code)]
-pub mod select;
-pub mod dialog;
