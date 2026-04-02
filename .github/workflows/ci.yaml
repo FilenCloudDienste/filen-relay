@@ -1,0 +1,35 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-02-20
+          components: clippy,rustfmt
+      - uses: Swatinem/rust-cache@a84bfdc502f07db5a85dd9d7a30f91a931516cc5
+        with:
+          shared-key: cargo-build-ci-linux-latest
+          prefix-key: ''
+          add-rust-environment-hash-key: 'false'
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Run clippy
+        run: cargo clippy -- -D warnings
+      - name: Run rustfmt
+        run: cargo fmt --all -- --check
+      - name: Install TOML linter
+        uses: taiki-e/cache-cargo-install-action@v2
+        with:
+          tool: taplo-cli@0.10.0
+      - name: Run TOML linter and formatter
+        run: |
+          taplo lint
+          taplo fmt --check
