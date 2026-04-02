@@ -152,7 +152,9 @@ pub(crate) async fn login_and_get_session_token(
 				);
 				Ok(LoginStatus::LoggedIn)
 			} else {
-				Err(anyhow::anyhow!("User is not allowed"))
+				Ok(LoginStatus::UserNotAllowed {
+					only_admin_allowed: allowed_users.is_empty(),
+				})
 			}
 		}
 	}

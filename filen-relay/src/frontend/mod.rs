@@ -205,8 +205,11 @@ fn Login() -> Element {
 		saved_credentials_pending.set(false);
 	});
 
+	let mut login_error_message = use_signal(|| None::<String>);
+
 	let login = move || async move {
 		loading.set(true);
+		login_error_message.set(None);
 		match crate::api::login(email.cloned(), password.cloned(), two_factor_code.cloned()).await {
 			Ok(login_status) => match login_status {
 				LoginStatus::LoggedIn => {
@@ -234,19 +237,31 @@ fn Login() -> Element {
 					two_factor_code.set(None);
 				}
 				LoginStatus::TwoFactorRequired => {
-					tracing::info!("Two-factor authentication required");
+					login_error_message.set(Some("2FA code required".into()));
 				}
 				LoginStatus::InvalidCredentials => {
-					tracing::info!("Invalid email or password");
-					// todo: better user feedback
+					login_error_message.set(Some("Invalid credentials".into()));
+				}
+				LoginStatus::UserNotAllowed { only_admin_allowed } => {
+					if only_admin_allowed {
+						login_error_message.set(Some(
+							"This instance is configured to only allow its host".into(),
+						));
+					} else {
+						login_error_message.set(Some(
+							"Your account is not allowed to use this instance".into(),
+						));
+					}
 				}
 			},
 			Err(err) => {
 				tracing::error!("Login failed: {}", err);
+				login_error_message.set(Some("Login failed unexpectedly".into()));
 			}
 		};
 		loading.set(false);
 	};
+	// todo: better user feedback for login errors, 2fa required, etc.
 
 	let admin_email = use_resource(move || async move { get_admin_email().await });
 
@@ -321,6 +336,9 @@ fn Login() -> Element {
 								class: "cursor-pointer",
 								"Remember me"
 							}
+						}
+						if let Some(error_message) = &*login_error_message.read() {
+							div { class: "text-red-400", "{error_message}" }
 						}
 					}
 				}

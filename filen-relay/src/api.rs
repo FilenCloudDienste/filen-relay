@@ -35,6 +35,7 @@ pub(crate) enum LoginStatus {
 	InvalidCredentials,
 	TwoFactorRequired,
 	LoggedIn,
+	UserNotAllowed { only_admin_allowed: bool },
 }
 
 #[post("/api/login", session: tower_sessions::Session)]
