@@ -21,8 +21,20 @@ jobs:
           prefix-key: ''
           add-rust-environment-hash-key: 'false'
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Run clippy
+      - name: Install Dioxus CLI
+        uses: taiki-e/cache-cargo-install-action@v3
+        with:
+          tool: dioxus-cli@0.7.3
+      - name: Run dioxus build
+        # this one is necessary also to generate filen-relay/assets/tailwind.css, which is otherwise missed by clippy
+        run: dioxus build
+        working-directory: filen-relay
+      - name: Run clippy in filen-relay
         run: cargo clippy -- -D warnings
+        working-directory: filen-relay
+      - name: Run clippy in filen-relay-deployer
+        run: cargo clippy -- -D warnings
+        working-directory: filen-relay-deployer
       - name: Run rustfmt
         run: cargo fmt --all -- --check
       - name: Install TOML linter
