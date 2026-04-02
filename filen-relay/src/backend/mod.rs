@@ -4,16 +4,13 @@ use axum_core::body::Body;
 use dioxus::fullstack::Redirect;
 use dioxus::prelude::*;
 use dioxus::server::axum;
-use dioxus::server::axum::middleware::Next;
 use dioxus::server::axum::{
     extract::{Path, Request},
     response::Response,
 };
 
 use crate::api::SKIP_UPDATE_CHECKER;
-use crate::backend::{
-    rclone_auth_proxy::handle_rclone_remote_config_request, server_manager::ServerManager,
-};
+use crate::backend::server_manager::ServerManager;
 use crate::common::ServerType;
 use crate::{
     backend::{
@@ -68,7 +65,7 @@ pub(crate) fn serve(args: Args) {
                 .map(|port| port.parse::<u16>().unwrap_or(8080))
                 .context("Failed to parse content of PORT env var")?;
             let server_manager = std::sync::Arc::new(
-                ServerManager::start_servers(self_port)
+                ServerManager::start_servers()
                     .await
                     .context("Failed to start Rclone servers")
                     .unwrap(),
@@ -136,27 +133,8 @@ pub(crate) fn serve(args: Args) {
                                 .await
                             },
                         ),
-                    )
-                    .route(
-                        "/rclone-auth-proxy/remote-config/{share_id}",
-                        axum::routing::get(
-                            |Path(share_id): Path<String>, req: Request| async move {
-                                handle_rclone_remote_config_request(share_id, req)
-                            },
-                        ),
-                    )
-                    .layer(axum::middleware::from_fn(
-                        move |req: Request, next: Next| async move {
-                            dioxus::logger::tracing::trace!(
-                                "Received request: {} {}",
-                                req.method(),
-                                req.uri()
-                            );
-                            next.run(req).await
-                        },
-                    )),
+                    ),
             )
-            // todo: add info somewhere that these routes exist
         }
     });
 }

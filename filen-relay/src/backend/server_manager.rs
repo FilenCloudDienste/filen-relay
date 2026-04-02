@@ -10,7 +10,8 @@ use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
 
 use crate::backend::db::DB;
-use crate::backend::rclone_auth_proxy::generate_rclone_auth_proxy_args;
+use crate::backend::rclone_auth_proxy::get_encoded_rclone_remote_config_for_share;
+use crate::backend::rclone_auth_proxy::ACT_AS_RCLONE_AUTH_PROXY_ARG;
 use crate::common::ServerType;
 
 use std::str::FromStr;
@@ -37,7 +38,7 @@ struct RcloneServerProcess {
 static RCLONE_BASE_URL_TO_SUBSTITUTE: &str = "/RCLONE_BASE_URL_TO_SUBSTITUTE"; // must start with a slash
 
 impl ServerManager {
-    pub(crate) async fn start_servers(self_port: u16) -> Result<ServerManager> {
+    pub(crate) async fn start_servers() -> Result<ServerManager> {
         let config_dir = std::env::current_dir()
             .context("Failed to get current directory")?
             .join("rclone_configs");
@@ -61,7 +62,7 @@ impl ServerManager {
                 std::env::current_exe()
                     .context("Failed to get current executable path")?
                     .display(),
-                generate_rclone_auth_proxy_args(self_port)
+                ACT_AS_RCLONE_AUTH_PROXY_ARG
             );
             let mut script_file = tempfile::NamedTempFile::new()?;
             script_file.disable_cleanup(true); // todo
@@ -70,6 +71,7 @@ impl ServerManager {
             perms.set_mode(0o755);
             script_file.as_file().set_permissions(perms)?;
             // todo: can we avoid creating a platform-dependent shell script?
+            // maybe this is actually solved since we don't need to pass dynamic args anymore?
 
             // spawn rclone process
             let port_str = format!(":{}", port);
@@ -80,6 +82,8 @@ impl ServerManager {
                 &port_str,
                 "--auth-proxy",
                 script_file.path().to_str().unwrap(),
+                "--max-header-bytes",
+                "16384", // arbitrarily larger than default 4096
             ];
             let base_url = if server_type == ServerType::Webdav {
                 args.push("--baseurl");
@@ -172,9 +176,13 @@ impl ServerManager {
             // insert share id for auth proxy
             req.headers_mut().insert(
                 "Authorization",
-                format!("Basic {}", BASE64_STANDARD.encode(format!("{}:", share.id)))
-                    .parse()
-                    .unwrap(),
+                format!(
+                    "Basic {}",
+                    get_encoded_rclone_remote_config_for_share(&share)
+                        .context("Failed to contruct rclone remote config for share")?
+                )
+                .parse()
+                .unwrap(),
             );
 
             // find proxy target
@@ -273,7 +281,6 @@ impl ServerManager {
                             .and_then(|h| h.to_str().ok())
                             .is_some_and(|h| h.contains("xml"))
                     {
-                        tracing::info!("Transforming response body for WebDAV share with id {} to replace base url since content-type indicates it's an XML response", id);
                         // replace base url in response body if needed (e.g. for WebDAV directory listings)
                         let (mut parts, body) = response.into_parts();
                         let body = axum::body::to_bytes(body, usize::MAX)
@@ -281,18 +288,9 @@ impl ServerManager {
                     .map_err(|e| anyhow::anyhow!("Failed to read response body for transformation (it might be too long; this might be a bug worth looking at): {}", e))?;
                         let body = String::from_utf8_lossy(&body).to_string();
                         let body = transform_uri_backward(&body);
-                        tracing::info!(
-                            "Original Content-Length: {:?}, new Content-Length: {}",
-                            parts.headers.get("content-length"),
-                            body.len()
-                        );
                         parts.headers.insert("content-length", body.len().into());
                         Ok(Body::from(body).into_response())
                     } else {
-                        tracing::info!(
-                        "Not transforming response body for share with id {} since it's not WebDAV",
-                        id
-                    );
                         Ok(response)
                     }
                 }

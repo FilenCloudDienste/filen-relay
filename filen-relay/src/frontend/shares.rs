@@ -205,11 +205,12 @@ fn OpenAsDialog(share: Share) -> Element {
                         }
                     }
                 }
-                Some(ServerType::S3) | Some(ServerType::Ftp) | Some(ServerType::Sftp) => {
+                Some(ServerType::S3) => {
                     rsx! {
-                        div { class: "text-yellow-400", "This protocol is not supported yet. Please check back later!" }
+                        div { class: "text-yellow-400",
+                            "This protocol, as well as FTP/SFTP, is not supported yet. Please check back later!" // todo: check that these protocols work properly and add instructions
+                        }
                     }
-                    // todo: check that these protocols work properly and add instructions
                 }
                 _ => rsx! {},
             }

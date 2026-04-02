@@ -3,7 +3,7 @@
 > [!IMPORTANT]
 > This project is in active development. **Do not use it.**
 
-Filen Relay provides a convenient way to serve your Filen Drive via WebDAV/HTTP/FTP/SFTP. Access the web interface to create shares mapping to multiple users, and manage basic permissions.
+Filen Relay provides a convenient way to serve your Filen Drive via HTTP/WebDAV/S3. Access the web interface to create shares mapping to multiple users, and manage basic permissions.
 
 ## Installation
 

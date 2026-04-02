@@ -61,8 +61,15 @@ pub(crate) enum ServerType {
     Http,
     Webdav,
     S3,
-    Ftp,
-    Sftp,
+    //Ftp, Sftp,
+    // since the rclone --max-header-size option doesn't work for ftp/sftp rclone servers, we disabled those for now,
+    // since they also come with other complications (e.g. different protocols etc) and it's not
+    // worth the effort to support them right now. if we want to reintroduce them, we would need
+    // to use the old setup with the auth proxy getting the remote config from the server via HTTP
+    // to avoid sending large headers, which can be found at:
+    // https://github.com/FilenCloudDienste/filen-relay/blob/80f6b08cd80998145d0c33565bb7b8c4639beb12/filen-relay/src/backend/rclone_auth_proxy.rs
+    // but check again if the header size is even also an issue for ftp/sftp, because it's not HTTP-based?
+    // todo: make FTP/SFTP work again
 }
 
 impl ServerType {
@@ -71,8 +78,6 @@ impl ServerType {
             ServerType::Http => "s",
             ServerType::Webdav => "webdav",
             ServerType::S3 => "s3",
-            ServerType::Ftp => "ftp",
-            ServerType::Sftp => "sftp",
         }
     }
 
@@ -81,8 +86,6 @@ impl ServerType {
             ServerType::Http => "http",
             ServerType::Webdav => "webdav",
             ServerType::S3 => "s3",
-            ServerType::Ftp => "ftp",
-            ServerType::Sftp => "sftp",
         }
     }
 }
@@ -106,8 +109,6 @@ impl<'de> Deserialize<'de> for ServerType {
             "s" => Ok(ServerType::Http),
             "webdav" => Ok(ServerType::Webdav),
             "s3" => Ok(ServerType::S3),
-            "ftp" => Ok(ServerType::Ftp),
-            "sftp" => Ok(ServerType::Sftp),
             _ => Err(serde::de::Error::custom(format!(
                 "Unknown server type: {}",
                 s
@@ -125,8 +126,6 @@ impl Display for ServerType {
                 ServerType::Http => "Web",
                 ServerType::Webdav => "WebDAV",
                 ServerType::S3 => "S3",
-                ServerType::Ftp => "FTP",
-                ServerType::Sftp => "SFTP",
             }
         )
     }
