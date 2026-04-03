@@ -10,7 +10,7 @@ FROM golang:latest AS go-builder
 RUN git clone https://github.com/FilenCloudDienste/filen-rclone.git /app
 WORKDIR /app
 RUN git switch upstream
-RUN go get github.com/FilenCloudDienste/filen-sdk-go@fix-from-ts-config
+RUN go get github.com/FilenCloudDienste/filen-sdk-go@latest
 RUN go build && mv ./rclone ./rclone-v1.70.0-filen.14-linux-amd64
 
 FROM rust:1 AS chef
