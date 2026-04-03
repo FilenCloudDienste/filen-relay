@@ -1,7 +1,6 @@
 use std::sync::{Mutex, OnceLock};
 
 use crate::common::{Share, ShareId};
-use dioxus::fullstack::response::Response;
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -50,13 +49,10 @@ pub(crate) async fn login(
 	Ok(login_status)
 }
 
-#[post("/api/logout")]
-pub(crate) async fn logout() -> Result<Response> {
-	use dioxus::fullstack::{body::Body, response::Response};
-	Ok(Response::builder()
-		.header("Set-Cookie", "Session=; HttpOnly; Path=/")
-		.body(Body::empty())
-		.unwrap())
+#[post("/api/logout", session: tower_sessions::Session)]
+pub(crate) async fn logout() -> Result<(), anyhow::Error> {
+	auth::logout(session).await?;
+	Ok(())
 }
 
 #[derive(Serialize, Deserialize)]

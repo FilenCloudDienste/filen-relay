@@ -159,3 +159,8 @@ pub(crate) async fn login_and_get_session_token(
 		}
 	}
 }
+
+pub(crate) async fn logout(session: Session) -> anyhow::Result<()> {
+	let _: Option<SessionToken> = session.remove(SESSION_TOKEN_KEY).await?;
+	Ok(())
+}
