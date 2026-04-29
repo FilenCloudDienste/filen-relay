@@ -11,6 +11,7 @@ pub(crate) struct Share {
 	pub password: Option<String>,
 	pub filen_email: String,
 	pub filen_stringified_client: String,
+	// todo: make more sure these fields aren't leaked to the client
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]

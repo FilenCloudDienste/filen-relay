@@ -1,11 +1,14 @@
 // todo: better technical documentation
 
+use std::collections::HashMap;
+
 use axum_core::body::Body;
+use axum_core::response::IntoResponse;
 use dioxus::fullstack::Redirect;
 use dioxus::prelude::*;
 use dioxus::server::axum;
 use dioxus::server::axum::{
-	extract::{Path, Request},
+	extract::{Path, Query, Request},
 	response::Response,
 };
 
@@ -71,8 +74,11 @@ pub(crate) fn serve(args: Args) {
 					.unwrap(),
 			);
 
-			let (server_manager_1, server_manager_2) =
-				(server_manager.clone(), server_manager.clone());
+			let (server_manager_1, server_manager_2, server_manager_3) = (
+				server_manager.clone(),
+				server_manager.clone(),
+				server_manager.clone(),
+			);
 			let router = dioxus::server::router(crate::frontend::App);
 			let router = auth::initialize_session_manager(router);
 			Ok(router
@@ -91,18 +97,33 @@ pub(crate) fn serve(args: Args) {
 				.route(
 					"/{server_type}/{id}",
 					axum::routing::any(
-						|Path((_server_type, _id)): Path<(ServerType, String)>, req: Request| async move {
-							Redirect::permanent(&format!("{}/", req.uri()))
+						move |Path((server_type, id)): Path<(ServerType, String)>,
+						      Query(_query): Query<HashMap<String, String>>,
+						      req: Request| async move {
+							if server_type != ServerType::S3 {
+								Redirect::permanent(&format!("{}/", req.uri())).into_response()
+							} else {
+								handle_rclone_request(
+									&self_port,
+									server_manager_1,
+									&server_type,
+									id,
+									req,
+								)
+								.await
+							}
 						},
 					),
 				)
 				.route(
 					"/{server_type}/{id}/",
 					axum::routing::any(
-						move |Path((server_type, id)): Path<(ServerType, String)>, req: Request| async move {
+						move |Path((server_type, id)): Path<(ServerType, String)>,
+						      Query(_query): Query<HashMap<String, String>>,
+						      req: Request| async move {
 							handle_rclone_request(
 								&self_port,
-								server_manager_1,
+								server_manager_2,
 								&server_type,
 								id,
 								req,
@@ -119,10 +140,11 @@ pub(crate) fn serve(args: Args) {
 							String,
 							String,
 						)>,
+						      Query(_query): Query<HashMap<String, String>>,
 						      req: Request| async move {
 							handle_rclone_request(
 								&self_port,
-								server_manager_2,
+								server_manager_3,
 								&server_type,
 								id,
 								req,

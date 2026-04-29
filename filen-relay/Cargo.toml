@@ -63,3 +63,9 @@ server = [
 	"tempfile",
 	"tower-sessions",
 ]
+
+[dev-dependencies]
+assert_cmd = "2.2.1"
+predicates = "3.1.4"
+reqwest = { version = "0.13.3", features = ["cookies", "json"] }
+test-utils = { git = "https://github.com/FilenCloudDienste/filen-rs", rev = "e328518b37ba6a364696f39b844c6f5ff27ffdbd" }
