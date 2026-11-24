@@ -15,15 +15,18 @@ pub(crate) struct Share {
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub(crate) struct ShareId(String);
+pub(crate) struct ShareId(pub String);
 
 impl ShareId {
+	/// call site needs to make sure there are no collisions
 	pub fn new() -> Self {
-		ShareId(uuid::Uuid::new_v4().to_string())
-	}
-
-	pub fn short(&self) -> &str {
-		self.0.split_once('-').unwrap().0
+		uuid::Uuid::new_v4()
+			.to_string()
+			.split_once('-')
+			.unwrap()
+			.0
+			.to_string()
+			.into()
 	}
 }
 
@@ -56,7 +59,7 @@ impl rusqlite::ToSql for ShareId {
 	}
 }
 
-#[derive(Serialize, Deserialize, EnumIter, PartialEq, Clone, Default, Display)]
+#[derive(Serialize, Deserialize, EnumIter, PartialEq, Clone, Default, Display, Debug)]
 pub(crate) enum ServerType {
 	#[default]
 	#[serde(rename = "s")]

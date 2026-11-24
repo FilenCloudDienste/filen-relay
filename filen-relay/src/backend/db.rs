@@ -187,6 +187,13 @@ impl DbViaOfflineOrRemoteFile {
 		Ok(())
 	}
 
+	pub(crate) fn check_share_exists(&self, id: &ShareId) -> Result<bool> {
+		let db = self.conn.lock().unwrap();
+		let mut stmt = db.prepare("SELECT COUNT(*) FROM shares WHERE id = ?1")?;
+		let count: i64 = stmt.query_row(rusqlite::params![id], |row| row.get(0))?;
+		Ok(count > 0)
+	}
+
 	pub(crate) fn get_shares(&self) -> Result<Vec<Share>> {
 		let db = self.conn.lock().unwrap();
 		let mut stmt =

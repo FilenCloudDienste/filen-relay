@@ -78,7 +78,7 @@ impl FilenRelayProcess {
 			.expect("Failed to send login request");
 	}
 
-	async fn create_test_share_and_get_id(&self, dir: String) -> String {
+	async fn create_test_share_and_get_id(&self, dir: String, password: &str) -> String {
 		// create share
 		let res = self
 			.client
@@ -87,7 +87,7 @@ impl FilenRelayProcess {
 				serde_json::json!({
 					"root": dir,
 					"read_only": true,
-					"password": null,
+					"password": password,
 				})
 				.to_string(),
 			)
@@ -118,8 +118,7 @@ impl FilenRelayProcess {
 		}
 
 		let shares = res.json::<Vec<Share>>().await.unwrap();
-		let id = shares.first().unwrap().id.clone();
-		id.split_once('-').unwrap().0.to_string() // extract short id
+		shares.first().unwrap().id.clone()
 	}
 }
 
@@ -201,6 +200,18 @@ impl GeneralRcloneClient {
 			.assert()
 			.success()
 	}
+
+	fn obscure_password(&self, password: &str) -> String {
+		assert_cmd::Command::new(self.rclone_executable_path.as_path())
+			.args(["obscure", password])
+			.output()
+			.expect("Failed to execute rclone obscure command")
+			.stdout
+			.iter()
+			.filter(|b| *b != &b'\n')
+			.map(|b| *b as char)
+			.collect()
+	}
 }
 
 struct RcloneBackend {
@@ -208,6 +219,7 @@ struct RcloneBackend {
 	backend_args: String,
 }
 
+// make sure to run this test with --nocapture to see the full logs
 #[tokio::test]
 async fn access_shares() {
 	// setup remote directory with sample files
@@ -220,25 +232,36 @@ async fn access_shares() {
 
 	// create share
 	filen_relay.login().await;
-	let id = filen_relay
-		.create_test_share_and_get_id(remote_files.get_dir())
+	let password = "mypassword"; // todo: also test access without a password?
+	let share_id = filen_relay
+		.create_test_share_and_get_id(remote_files.get_dir(), password)
 		.await;
-	println!("Created share with id: {}", id);
+	println!("Created share with id: {}", share_id);
 
 	let rclone = GeneralRcloneClient::init().await;
-	let backends = &[RcloneBackend {
-		backend_type: "webdav",
-		backend_args: format!("--webdav-url {}/webdav/{}", filen_relay.url_root, id),
-	}]; // todo: add more backends (S3, FTP, SFTP) here when they are implemented
+	let obscured_password = rclone.obscure_password(password);
+	let backends = &[
+		RcloneBackend {
+			backend_type: "webdav",
+			backend_args: format!(
+				"--webdav-url {}/webdav/ --webdav-user {} --webdav-pass {}",
+				filen_relay.url_root, share_id, obscured_password
+			),
+		},
+		RcloneBackend {
+			backend_type: "s3",
+			backend_args: format!("--s3-endpoint {}/s3 --s3-provider Rclone --s3-access-key-id {} --s3-secret-access-key {}", filen_relay.url_root, share_id, password),
+		},
+	]; // todo: add more backends (S3, FTP, SFTP) here when they are implemented
 	for backend in backends {
 		println!("Testing operations on backend: {}", backend.backend_type);
 
 		// do various rclone operations to verify the share can be accessed correctly on all backends
 
-		// list files (but none are there)
+		println!("list files (but none are there)");
 		rclone.execute_command(backend, "ls :backend:/");
 
-		// create file with content and upload it
+		println!("create file with content and upload it");
 		let temp_dir = tempfile::tempdir().unwrap();
 		let uploaded_file = temp_dir.path().join(SAMPLE_FILE_NAME);
 		std::fs::write(&uploaded_file, SAMPLE_FILE_CONTENT).unwrap();
@@ -249,22 +272,22 @@ async fn access_shares() {
 			)
 			.success();
 
-		// verify file is accessible
+		println!("verify file is there");
 		rclone
 			.execute_command(backend, "ls :backend:/")
 			.stdout(predicates::str::contains(SAMPLE_FILE_NAME));
 
-		// verify file content
+		println!("verify file content");
 		rclone
 			.execute_command(backend, &format!("cat :backend:/{}", SAMPLE_FILE_NAME))
 			.stdout(predicates::str::contains(SAMPLE_FILE_CONTENT));
 
-		// delete file
+		println!("delete file");
 		rclone
 			.execute_command(backend, &format!("delete :backend:/{}", SAMPLE_FILE_NAME))
-			.stdout(predicates::str::contains(""));
+			.success();
 
-		// verify file is no longer accessible
+		println!("verify file is no longer accessible");
 		rclone
 			.execute_command(backend, "ls :backend:/")
 			.stdout(predicates::str::contains(SAMPLE_FILE_NAME).not());
@@ -278,7 +301,7 @@ async fn access_shares() {
 		remote_files.create_sample_file().await;
 
 		// access share via HTTP UI
-		let url = format!("{}/s/{}", filen_relay.url_root, id);
+		let url = format!("{}/s/{}/", filen_relay.url_root, share_id);
 		let res = reqwest::Client::new()
 			.get(url)
 			.send()

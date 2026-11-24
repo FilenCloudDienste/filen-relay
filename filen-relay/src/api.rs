@@ -156,8 +156,15 @@ pub(crate) async fn add_share(
 		.await
 		.context("Failed to check root")?
 		.path;
+	let mut share_id = ShareId::new();
+	while DB
+		.check_share_exists(&share_id)
+		.map_err(|e| anyhow::anyhow!("Failed to check if share id exists in database: {}", e))?
+	{
+		share_id = ShareId::new(); // make sure there are no collisions
+	}
 	DB.create_share(&Share {
-		id: ShareId::new(),
+		id: share_id,
 		root,
 		read_only,
 		password,

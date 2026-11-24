@@ -13,6 +13,7 @@ use dioxus::server::axum::{
 };
 
 use crate::api::SKIP_UPDATE_CHECKER;
+use crate::backend::rclone_auth_proxy::rclone_auth_proxy_ipc;
 use crate::backend::server_manager::ServerManager;
 use crate::common::ServerType;
 use crate::{
@@ -68,88 +69,105 @@ pub(crate) fn serve(args: Args) {
 				.map(|port| port.parse::<u16>().unwrap_or(8080))
 				.context("Failed to parse content of PORT env var")?;
 			let server_manager = std::sync::Arc::new(
-				ServerManager::start_servers()
+				ServerManager::start_servers(self_port)
 					.await
 					.context("Failed to start Rclone servers")
 					.unwrap(),
 			);
 
-			let (server_manager_1, server_manager_2, server_manager_3) = (
+			let (
+				server_manager_1,
+				server_manager_2,
+				server_manager_3,
+				server_manager_4,
+				server_manager_5,
+			) = (
+				server_manager.clone(),
+				server_manager.clone(),
 				server_manager.clone(),
 				server_manager.clone(),
 				server_manager.clone(),
 			);
 			let router = dioxus::server::router(crate::frontend::App);
+			let router = rclone_auth_proxy_ipc::register_ipc_endpoint(router);
 			let router = auth::initialize_session_manager(router);
 			Ok(router
+				// append missing trailing slash
 				.route(
-					"/{server_type}",
+					"/s/{id}",
 					axum::routing::any(
-						|Path(_server_type): Path<ServerType>, _req: Request| async move {
-							Response::builder()
-								.status(axum::http::StatusCode::NOT_FOUND)
-								.body(Body::from("No share id provided"))
-								.unwrap()
-							// WebDAV clients such as Windows Explorer might otherwise call routes such as /webdav, get assigned a session and be confused somehow
+						move |Path(_id): Path<String>,
+						      Query(_query): Query<HashMap<String, String>>,
+						      req: Request| async move {
+							Redirect::permanent(&format!("{}/", req.uri())).into_response()
+						},
+					),
+				)
+				// serve http shares with or without rest
+				.route(
+					"/s/{id}/",
+					axum::routing::any(
+						move |Path(id): Path<String>,
+						      Query(_query): Query<HashMap<String, String>>,
+						      req: Request| async move {
+							handle_rclone_request(
+								server_manager_1,
+								&ServerType::Http,
+								Some(id),
+								req,
+							)
+							.await
 						},
 					),
 				)
 				.route(
-					"/{server_type}/{id}",
+					"/s/{id}/{*rest}",
 					axum::routing::any(
-						move |Path((server_type, id)): Path<(ServerType, String)>,
+						move |Path((id, _rest)): Path<(String, String)>,
 						      Query(_query): Query<HashMap<String, String>>,
 						      req: Request| async move {
-							if server_type != ServerType::S3 {
+							handle_rclone_request(
+								server_manager_2,
+								&ServerType::Http,
+								Some(id),
+								req,
+							)
+							.await
+						},
+					),
+				)
+				// serve other servers (with or without rest and regardless of trailing slash)
+				.route(
+					"/{server_type}",
+					axum::routing::any(
+						|Path(server_type): Path<ServerType>, req: Request| async move {
+							if server_type == ServerType::Webdav {
+								// append missing trailing slash
 								Redirect::permanent(&format!("{}/", req.uri())).into_response()
 							} else {
-								handle_rclone_request(
-									&self_port,
-									server_manager_1,
-									&server_type,
-									id,
-									req,
-								)
-								.await
+								handle_rclone_request(server_manager_3, &server_type, None, req)
+									.await
 							}
 						},
 					),
 				)
 				.route(
-					"/{server_type}/{id}/",
+					"/{server_type}/",
 					axum::routing::any(
-						move |Path((server_type, id)): Path<(ServerType, String)>,
+						move |Path(server_type): Path<ServerType>,
 						      Query(_query): Query<HashMap<String, String>>,
 						      req: Request| async move {
-							handle_rclone_request(
-								&self_port,
-								server_manager_2,
-								&server_type,
-								id,
-								req,
-							)
-							.await
+							handle_rclone_request(server_manager_4, &server_type, None, req).await
 						},
 					),
 				)
 				.route(
-					"/{server_type}/{id}/{*rest}",
+					"/{server_type}/{*rest}",
 					axum::routing::any(
-						move |Path((server_type, id, _rest)): Path<(
-							ServerType,
-							String,
-							String,
-						)>,
+						move |Path((server_type, _rest)): Path<(ServerType, String)>,
 						      Query(_query): Query<HashMap<String, String>>,
 						      req: Request| async move {
-							handle_rclone_request(
-								&self_port,
-								server_manager_3,
-								&server_type,
-								id,
-								req,
-							)
-							.await
+							handle_rclone_request(server_manager_5, &server_type, None, req).await
 						},
 					),
 				))
@@ -158,14 +176,19 @@ pub(crate) fn serve(args: Args) {
 }
 
 async fn handle_rclone_request(
-	self_port: &u16,
 	server_manager: std::sync::Arc<server_manager::ServerManager>,
 	server_type: &ServerType,
-	id: String,
+	id: Option<String>,
 	req: Request,
 ) -> Response {
+	if server_type == &ServerType::Http && id.is_none() {
+		return Response::builder()
+			.status(axum::http::StatusCode::BAD_REQUEST)
+			.body(Body::from("Share id is required under /s"))
+			.unwrap();
+	}
 	server_manager
-		.handle_rclone_request(self_port, server_type, id, req)
+		.handle_rclone_request(server_type, id, req)
 		.await
 		.unwrap_or_else(|e| {
 			Response::builder()

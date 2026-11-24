@@ -34,9 +34,6 @@ impl<T> Deref for UnwrapOnceLock<T> {
 }
 
 pub(crate) async fn find_path_for_dir(client: &Client, dir: RemoteDirectory) -> Result<String> {
-	dbg!("Finding path for dir", dir.uuid());
-	dbg!("Root dir", client.root().uuid());
-	dbg!("Parent uuid", dir.parent);
 	if dir.uuid() == client.root().uuid() {
 		return Ok(String::new());
 	}

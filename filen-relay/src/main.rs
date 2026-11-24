@@ -49,9 +49,7 @@ pub(crate) struct Args {
 
 #[cfg(feature = "server")]
 fn main() {
-	if std::env::args()
-		.any(|arg| arg.contains(backend::rclone_auth_proxy::ACT_AS_RCLONE_AUTH_PROXY_ARG))
-	{
+	if backend::rclone_auth_proxy::RcloneAuthProxyOptions::is_rclone_auth_proxy_mode() {
 		// setup logging to file for easier debugging of rclone auth proxy process
 		ftail::Ftail::new()
 			.single_file(
@@ -63,9 +61,15 @@ fn main() {
 			.init()
 			.unwrap();
 
-		if let Err(e) = backend::rclone_auth_proxy::rclone_auth_proxy_main() {
-			log::error!("{:?}", e);
-		}
+		tokio::runtime::Builder::new_current_thread()
+			.enable_all()
+			.build()
+			.unwrap()
+			.block_on(async move {
+				if let Err(e) = backend::rclone_auth_proxy::rclone_auth_proxy_main().await {
+					log::error!("{:?}", e);
+				}
+			});
 	} else {
 		backend::serve(<Args as clap::Parser>::parse());
 	}

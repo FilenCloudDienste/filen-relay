@@ -8,7 +8,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.100"
-dioxus = { version = "0.7.1", features = ["router", "fullstack"] }
+dioxus = { version = "0.7.9", features = ["router", "fullstack"] }
 rusqlite = { version = "0.38.0", features = ["bundled"], optional = true }
 serde = { version = "1.0.228", features = ["derive"] }
 filen-sdk-rs = { git = "https://github.com/FilenCloudDienste/filen-rs", rev = "e328518b37ba6a364696f39b844c6f5ff27ffdbd", optional = true }

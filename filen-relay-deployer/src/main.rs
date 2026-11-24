@@ -3,6 +3,7 @@ use clap::Parser;
 use filen_sdk_rs::{auth::Client, ErrorKind};
 use filen_types::error::ResponseError;
 
+mod gcloud;
 mod scaleway;
 
 #[derive(Parser, Clone)]
@@ -28,6 +29,12 @@ pub(crate) struct Args {
 		help = "2FA code of the Filen account with admin privileges (if 2FA is enabled)"
 	)]
 	admin_2fa_code: Option<String>,
+	#[arg(
+		long,
+		env = "FILEN_RELAY_PROVIDER",
+		help = "The provider to deploy to (e.g. gcloud, scaleway)"
+	)]
+	provider: Option<String>,
 	#[arg(
 		long,
 		env = "FILEN_RELAY_SCALEWAY_API_KEY_SECRET",
@@ -141,10 +148,17 @@ async fn main_() -> Result<()> {
 	login_spinner.stop(format!("Logged in to admin account {}!", client.email()));
 
 	// choose backend
-	match cliclack::select("Pick a backend to deploy Filen Relay on:")
-		.item("scaleway", "Scaleway", "")
-		.interact()?
-	{
+	let provider = match args.provider.as_deref() {
+		Some(provider) => provider,
+		None => cliclack::select("Pick a backend to deploy Filen Relay on:")
+			.item("gcloud", "Google Cloud", "")
+			.item("scaleway", "Scaleway", "")
+			.interact()?,
+	};
+	match provider {
+		"gcloud" => {
+			gcloud::deploy_to_gcloud(filen_relay_version, client, args).await?;
+		}
 		"scaleway" => {
 			scaleway::deploy_to_scaleway(filen_relay_version, client, args).await?;
 		}

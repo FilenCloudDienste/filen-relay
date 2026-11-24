@@ -54,7 +54,7 @@ pub(crate) fn Shares() -> Element {
 pub(crate) fn ShareCard(share: Share, on_remove: EventHandler<()>) -> Element {
 	let open_external_icon = asset!("/assets/open-external-icon.svg");
 	let ellipsis_icon = asset!("/assets/ellipsis-icon.svg");
-	let url = format!("/s/{}", share.id.short());
+	let url = format!("/s/{}", share.id);
 	let mut removing = use_signal(|| false);
 	let mut open_external_dialog_open = use_signal(|| false);
 	let share_id = share.id.clone();
@@ -142,18 +142,25 @@ fn OpenAsDialog(share: Share) -> Element {
 	});
 	let share_url = match &*root.read() {
 		Some(Ok(url)) => Some(format!(
-			"{}/{}/{}",
+			"{}/{}",
 			url,
 			serde_json::to_string(&open_as().unwrap_or_default())
 				.unwrap()
-				.trim_matches('"'),
-			share.id.short()
+				.trim_matches('"')
 		)),
 		Some(Err(e)) => {
 			dioxus::logger::tracing::error!("Failed to get server URL: {}", e);
 			None
 		}
 		_ => None,
+	};
+	let share_url = if let Some(share_url) = share_url {
+		Some(match open_as() {
+			Some(ServerType::Http) => format!("{}/{}/", share_url, share.id),
+			_ => share_url,
+		})
+	} else {
+		None
 	};
 
 	rsx! {
@@ -173,46 +180,50 @@ fn OpenAsDialog(share: Share) -> Element {
 			match open_as() {
 				Some(ServerType::Http) => {
 					rsx! {
-						"You can open this share in your web browser by visiting:\n"
-						if let Some(share_url) = share_url {
-							a {
-								class: "text-blue-400 hover:underline",
-								href: "{share_url}",
-								target: "_blank",
-								"{share_url}"
-							}
-						} else {
-							"Loading share URL..."
-						}
+				"You can open this share in your web browser by visiting "
+				if let Some(share_url) = share_url {
+					a {
+						class: "text-blue-400 hover:underline",
+						href: "{share_url}",
+						target: "_blank",
+						"{share_url}"
 					}
+				} else {
+					"Loading share URL..."
+				}
+				". "
+				if let Some(password) = share.password {
+					"You will need to enter your share password "
+					span { class: "font-mono text-white whitespace-nowrap", "{password}" }
+					", but no username is required."
+				}
+			}
 				}
 				Some(ServerType::Webdav) => {
 					rsx! {
-						"You can open this share in a WebDAV client by connecting to:\n" // todo: add option to show the password
-						if let Some(share_url) = share_url {
-							a {
-								class: "text-blue-400 hover:underline",
-								href: "{share_url}/",
-								target: "_blank",
-								"{share_url}/"
-							}
-						} else {
-							"Loading share URL..."
-						}
-						if share.password.is_some() {
-							div { class: "mt-2",
-								"This share needs a password to access. Use Basic authentication with any username (or empty) and the share password."
-								// todo: add option to show the password
-							}
-						}
-					}
+				"You can open this share in a WebDAV client by connecting to "
+				if let Some(share_url) = share_url {
+					span { class: "font-mono text-white whitespace-nowrap", "{share_url}" }
+				} else {
+					"(Loading share URL...)"
+				}
+				" using Basic authentication with username "
+				span { class: "font-mono text-white whitespace-nowrap", "{share.id.0}" }
+				if let Some(password) = share.password {
+					" and password "
+					span { class: "font-mono text-white whitespace-nowrap", "{password}" }
+					"."
+				} else {
+					" and no password."
+				}
+			}
 				}
 				Some(ServerType::S3) => {
 					rsx! {
-						div { class: "text-yellow-400",
-							"This protocol, as well as FTP/SFTP, is not supported yet. Please check back later!" // todo: check that these protocols work properly and add instructions
-						}
-					}
+				div { class: "text-yellow-400",
+					"This protocol, as well as FTP/SFTP, is not supported yet. Please check back later!" // todo: check that these protocols work properly and add instructions
+				}
+			}
 				}
 				_ => rsx! {},
 			}
